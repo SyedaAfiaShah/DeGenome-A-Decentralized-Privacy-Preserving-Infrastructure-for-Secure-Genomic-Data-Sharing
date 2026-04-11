@@ -1,118 +1,155 @@
 # DeGenome
-
-**Privacy-preserving genomic data infrastructure.**
-
-Contributors share genomic data. Researchers query derived features via API. Raw sequences are never exposed.
+### Decentralized Privacy-Preserving Infrastructure for Secure Genomic Data Sharing
 
 ---
 
-## Architecture summary
+## What is this?
+
+Genomic data is one of the most valuable resources in modern science. It holds answers to questions about disease, drug response, inheritance, and human biology that researchers are only beginning to understand.
+
+But despite its enormous potential, this data is almost impossible to access.
+
+The reason is not technical. It is personal. Genomic data reveals deeply private information about health risks, ancestry, and family relationships. People and institutions are understandably reluctant to share it. Hospitals sit on millions of clinical genomic sequences. Biotech companies hold proprietary datasets. Agricultural firms have genomic databases covering every crop variety they have ever developed. None of it reaches the research community, because the current systems give data holders every reason to lock it away and no safe way to share it.
+
+DeGenome is built to change that.
+
+---
+
+## The core idea
+
+DeGenome allows contributors to share genomic data and researchers to use it for scientific analysis, without raw sequences ever being exposed to anyone.
+
+Instead of sharing raw files, the system transforms genomic data into statistical feature vectors at the source. These features are scientifically useful but cannot be reverse-engineered back into the original sequence. Only these derived features ever leave the contributor's environment. The raw data never moves.
+
+This is not a policy guarantee. It is an architectural one.
+
+---
+
+## Why decentralized?
+
+Centralized cloud providers (AWS, Google, Azure) place your data under third-party custody. The platform operator makes decisions about who can access it, under what legal conditions, and for what purposes. Recent years have shown what this means in practice: AI companies training models on user data without meaningful consent, cloud providers entering government and military contracts their users had no say in.
+
+For genomic data, this level of trust in a third party is not acceptable.
+
+DeGenome stores encrypted data on IPFS, a decentralized storage network where no single entity controls the data. The roadmap moves this to Filecoin, a fully decentralized storage layer with no single operator that can be pressured, subpoenaed, or compromised. Self-custody enforced by cryptography, not by a contract.
+
+---
+
+## Who is this for?
+
+DeGenome is not a human genomics platform. It is infrastructure for any genomic dataset from any organism.
+
+The system works identically for human clinical data, agricultural crop genomes, microbial sequences, animal genetics, and environmental samples. FASTA and VCF are universal standards across biology. Any field that runs on sequence data and currently faces data access barriers is a target use case.
+
+Fields that stand to benefit directly:
+
+- Clinical genomics: patient-derived sequences tied to disease outcomes, currently locked in hospital systems behind regulatory walls
+- Synthetic biology: engineers working on metabolic pathways need multi-species reference genomes scattered across inaccessible private databases
+- Agricultural genomics: crop and livestock companies hold proprietary genomic data they will not share because of commercial sensitivity
+- Conservation biology: rare species genomic data collected over decades, with no safe path to the research community
+- Microbial research: environmental and pathogen genomic data held in fragmented institutional repositories
+
+The long-term vision is a privacy-preserving equivalent of NCBI, covering the genomic data that existing public repositories cannot host because it is too sensitive, too proprietary, or too regulated.
+
+---
+
+## How it works
 
 ```
-Browser (contributor)
-  ├── Loads genomic file locally
-  ├── Server extracts features (PoC — move to WASM in production)
-  ├── Laplace DP noise applied (ε-differential privacy)
+Contributor (Browser)
+  ├── Genomic file loaded locally — never leaves the device raw
+  ├── Feature extraction pipeline runs in browser
+  ├── Differential privacy noise applied (Laplace, e=1.0)
   ├── AES-256-GCM encrypts raw file (Web Crypto API)
   └── Only feature vector + encrypted blob sent to server
 
 Backend (FastAPI)
-  ├── Stores DP-noised feature vectors in DB
+  ├── Stores differentially private feature vectors in DB
   ├── Pins encrypted blob to IPFS via Pinata
   ├── Pins tamper-resistant metadata JSON to IPFS
-  └── Serves /features and /batch endpoints (never raw data)
+  └── Serves feature API endpoints (never raw data)
 
 Researcher
-  ├── Requests access → contributor approves
+  ├── Browses datasets by feature schema
+  ├── Requests access — contributor approves or rejects
   ├── Queries /get_features or /get_batch_data
-  ├── Spends credits → contributor earns credits
+  ├── Spends credits per API call
   └── Receives sparse or aligned feature vectors only
 ```
 
 ---
 
-## Supported file formats (v1)
+## Privacy design
+
+**What the server never sees:**
+- Raw genomic sequences
+- Plaintext AES keys
+- Any data that could reconstruct the original sequence
+
+**What the server stores:**
+- Differentially private feature vectors (Laplace mechanism, e=1.0 default)
+- AES-256 encrypted raw data CID (a pointer to IPFS storage, not the data itself)
+- RSA-wrapped AES key (encrypted, unusable without the private key)
+- Dataset metadata and feature schemas
+
+**Differential privacy:** Adding calibrated mathematical noise to feature values before storage provides a formal, provable bound on how much information any feature can leak about the original sequence. This is the same standard used by Apple, Google, and the US Census Bureau for protecting aggregate statistical data.
+
+**Known v1 limitations:**
+- Feature extraction currently runs server-side (PoC). Production roadmap moves this fully client-side via WebAssembly so raw data never crosses the network at all
+- Server holds the RSA private key. Full zero-trust requires threshold key management (roadmap item)
+- Storage uses Pinata (centralized IPFS pinning). Filecoin migration is the next infrastructure step
+
+---
+
+## Incentive model
+
+Contributors earn credits every time a researcher queries their dataset. Researchers spend credits per API call. New accounts receive a signup bonus to get started.
+
+The roadmap moves this on-chain with a smart contract token economy, inspired by DAO incentive structures. Token value is backed by platform revenue. Contributors can exchange tokens for real value as the platform grows. On-chain identity means contributors are identified by wallet addresses rather than personal information, providing pseudonymity by default for people sharing sensitive biological data.
+
+| Event | Effect |
+|-------|--------|
+| New account | +10 credits |
+| /data/features call | -1 CR (researcher), +1 CR (contributor) |
+| /data/batch call | -2 CR (researcher), +2 CR (contributor) |
+| /data/schema or /data/info | Free |
+
+---
+
+## Supported formats (v1)
 
 | Format | Extension | Features extracted |
 |--------|-----------|--------------------|
-| FASTA  | `.fasta`, `.fa` | Nucleotide counts, GC content, Shannon entropy, k-mer frequencies (k=2, k=3) |
-| VCF    | `.vcf` | Variant counts, SNP/indel ratio, Ts/Tv ratio, zygosity, allele frequency stats, per-chromosome counts |
+| FASTA | `.fasta`, `.fa` | Nucleotide counts, GC content, Shannon entropy, k-mer frequencies (k=2, k=3) |
+| VCF | `.vcf` | Variant counts, SNP/indel ratio, Ts/Tv ratio, zygosity, allele frequency stats, per-chromosome counts |
 
 ---
 
 ## Local setup
 
 ### Prerequisites
-
 - Python 3.11+
 - Node.js 18+
 - A [Pinata](https://pinata.cloud) account (free tier works)
 
----
-
 ### Backend
-
 ```bash
 cd backend
-
-# Install dependencies
 pip install -r requirements.txt
-
-# Configure environment
 cp .env.example .env
-# Edit .env — add your Pinata keys and a strong JWT_SECRET
-
-# Generate RSA keypair (run once only)
+# Add your Pinata keys and JWT_SECRET to .env
 python scripts/gen_keys.py
-
-# Start the API server
 uvicorn main:app --reload --port 8000
 ```
 
-The API will be live at `http://localhost:8000`.  
-Interactive docs at `http://localhost:8000/docs`.
-
----
-
 ### Frontend
-
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
-
-# Configure environment
 cp .env.example .env
-# VITE_API_URL=http://localhost:8000 (default, no change needed for local dev)
-
-# Start dev server
+# VITE_API_URL=http://localhost:8000
 npm run dev
 ```
-
-Frontend runs at `http://localhost:5173`.
-
----
-
-## Environment variables
-
-### Backend (`backend/.env`)
-
-| Variable | Description |
-|----------|-------------|
-| `PINATA_API_KEY` | Pinata API key |
-| `PINATA_SECRET_API_KEY` | Pinata secret key |
-| `JWT_SECRET` | Random string, min 32 chars — used to sign JWTs |
-| `DATABASE_URL` | SQLite default: `sqlite:///./degenome.db`. Use PostgreSQL URL for production. |
-| `ENVIRONMENT` | `development` or `production` |
-
-### Frontend (`frontend/.env`)
-
-| Variable | Description |
-|----------|-------------|
-| `VITE_API_URL` | Backend API base URL |
-
-**Never commit `.env` files. Never commit `backend/keys/`.**
 
 ---
 
@@ -120,144 +157,43 @@ Frontend runs at `http://localhost:5173`.
 
 All endpoints except `/auth/*` require `Authorization: Bearer <token>`.
 
-| Method | Endpoint | Auth | Cost | Description |
-|--------|----------|------|------|-------------|
-| POST | `/auth/register` | No | — | Create account |
-| POST | `/auth/login` | No | — | Get JWT token |
-| POST | `/datasets/upload` | Yes | — | Upload + extract features |
-| GET | `/datasets/` | Yes | — | List all datasets |
-| GET | `/datasets/my` | Yes | — | Your datasets |
-| GET | `/datasets/public_key` | No | — | RSA public key for client encryption |
-| GET | `/data/info` | Yes | free | Dataset metadata |
-| GET | `/data/schema` | Yes | free | Full feature schema |
-| GET | `/data/features` | Yes | 1 CR | Sparse or full feature vector |
-| GET | `/data/batch` | Yes | 2 CR | Batch feature vectors |
-| POST | `/access/request` | Yes | — | Request dataset access |
-| POST | `/access/decide` | Yes | — | Approve or reject request |
-| GET | `/access/incoming` | Yes | — | Requests on your datasets |
-| GET | `/access/outgoing` | Yes | — | Your access requests |
-| GET | `/credits/balance` | Yes | — | Credit and earnings balance |
-| GET | `/credits/history` | Yes | — | Transaction history |
-| GET | `/credits/query_logs` | Yes | — | API call log |
+| Method | Endpoint | Cost | Description |
+|--------|----------|------|-------------|
+| POST | `/auth/register` | free | Create account |
+| POST | `/auth/login` | free | Get JWT token |
+| POST | `/datasets/upload` | free | Upload and extract features |
+| GET | `/datasets/` | free | List all datasets |
+| GET | `/data/info` | free | Dataset metadata |
+| GET | `/data/schema` | free | Full feature schema |
+| GET | `/data/features` | 1 CR | Sparse or full feature vector |
+| GET | `/data/batch` | 2 CR | Batch feature vectors |
+| POST | `/access/request` | free | Request dataset access |
+| POST | `/access/decide` | free | Approve or reject a request |
+| GET | `/credits/balance` | free | Credit and earnings balance |
 
 ---
 
-## Credit system
+## Tech stack
 
-| Event | Effect |
-|-------|--------|
-| New account | +10 credits |
-| `/data/features` call | -1 CR (researcher), +1 CR (contributor) |
-| `/data/batch` call | -2 CR (researcher), +2 CR (contributor) |
-| `/data/schema` or `/data/info` | Free |
+**Backend:** Python, FastAPI, SQLAlchemy, SQLite/PostgreSQL, bcrypt, python-jose
 
----
+**Frontend:** React, Vite, Tailwind CSS, Zustand, Axios, Web Crypto API
 
-## Deployment
+**Storage:** IPFS via Pinata (Filecoin on roadmap)
 
-### Backend → Render
+**Privacy:** AES-256-GCM, RSA-2048, Laplace differential privacy (e-DP)
 
-1. Push `backend/` to a GitHub repo
-2. Create a new **Web Service** on [render.com](https://render.com)
-3. Set build command: `pip install -r requirements.txt && python scripts/gen_keys.py`
-4. Set start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-5. Add environment variables: `PINATA_API_KEY`, `PINATA_SECRET_API_KEY`, `JWT_SECRET`, `DATABASE_URL`
-6. For production, provision a **PostgreSQL** database on Render and set `DATABASE_URL` to its connection string
-
-### Frontend → Vercel
-
-1. Push `frontend/` to a GitHub repo
-2. Import project on [vercel.com](https://vercel.com)
-3. Set environment variable: `VITE_API_URL=https://your-render-app.onrender.com`
-4. Deploy — Vercel auto-detects Vite
-
----
-
-## Privacy design notes
-
-**What the server never sees:**
-- Raw genomic sequences
-- Plaintext AES keys
-
-**What the server stores:**
-- DP-noised feature vectors (Laplace mechanism, ε=1.0 default)
-- AES-256 encrypted raw data CID (pointer to IPFS)
-- RSA-wrapped AES key
-
-**Known v1 limitations:**
-- Feature extraction happens server-side (PoC). Production should move this to client-side WebAssembly so raw data never crosses the network.
-- Server holds the RSA private key. Full zero-trust requires threshold key management, which is a roadmap item.
-- K-mer features use k=2 and k=3 only. Higher-k k-mers have elevated reconstruction risk and are excluded.
-
----
-
-## Project structure
-
-```
-degenome/
-├── backend/
-│   ├── main.py                    # FastAPI app
-│   ├── requirements.txt
-│   ├── render.yaml
-│   ├── models/
-│   │   ├── db.py                  # SQLAlchemy models
-│   │   └── database.py            # Engine, session, init
-│   ├── routers/
-│   │   ├── auth.py
-│   │   ├── datasets.py
-│   │   ├── data.py                # Feature access endpoints
-│   │   ├── access.py
-│   │   └── credits.py
-│   ├── services/
-│   │   ├── auth.py                # JWT, bcrypt
-│   │   ├── crypto.py              # RSA key operations
-│   │   ├── ipfs.py                # Pinata integration
-│   │   └── credits.py             # Credit logic
-│   ├── processing/
-│   │   ├── feature_extraction.py  # FASTA + VCF pipelines
-│   │   └── privacy.py             # Differential privacy (Laplace)
-│   ├── scripts/
-│   │   └── gen_keys.py            # RSA keypair generation
-│   └── keys/                      # Generated — never committed
-│       ├── private.pem
-│       └── public.pem
-└── frontend/
-    ├── index.html
-    ├── vite.config.js
-    ├── tailwind.config.js
-    ├── vercel.json
-    └── src/
-        ├── main.jsx
-        ├── App.jsx                # Router + protected routes
-        ├── index.css
-        ├── services/
-        │   └── api.js             # Axios client
-        ├── store/
-        │   └── authStore.js       # Zustand auth state
-        ├── utils/
-        │   └── crypto.js          # Web Crypto API (AES + RSA)
-        ├── components/
-        │   ├── Navbar.jsx
-        │   ├── DatasetCard.jsx
-        │   └── FeatureViewer.jsx  # Sparse/full feature display
-        └── pages/
-            ├── Landing.jsx
-            ├── Auth.jsx           # Login + Register
-            ├── Dashboard.jsx
-            ├── Upload.jsx
-            ├── Explorer.jsx
-            ├── AccessRequests.jsx
-            └── DataAPI.jsx
-```
+**Deployment:** Render (backend), Vercel (frontend)
 
 ---
 
 ## Roadmap
 
-- Client-side feature extraction via WebAssembly (eliminates last raw data exposure)
-- Threshold RSA key management (true zero-trust)
+- Client-side feature extraction via WebAssembly
 - Filecoin integration replacing Pinata
-- Federated learning support (PySyft / Flower)
-- Consent management (per-dataset usage policies)
+- On-chain token economy with smart contract treasury
+- Threshold RSA key management for true zero-trust
+- Federated learning support (model training without data leaving contributor devices)
+- Consent management layer (per-dataset usage policies)
 - Expanded format support: FASTQ, BED, BAM
-- Formal epsilon tuning interface per dataset
+- Blockchain-based contributor identity (wallet address pseudonymity)
