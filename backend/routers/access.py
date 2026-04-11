@@ -1,0 +1,111 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from models.database import get_db
+from models.db import AccessRequest, Dataset, User
+from services.auth import get_current_user
+from datetime import datetime, timedelta
+
+router = APIRouter(prefix="/access", tags=["access"])
+
+
+class RequestIn(BaseModel):
+    dataset_id: str
+    purpose:    str
+
+class DecisionIn(BaseModel):
+    request_id: str
+    decision:   str   # approved | rejected
+    days_valid: int = 30
+
+
+@router.post("/request")
+def request_access(
+    body: RequestIn,
+    db:   Session = Depends(get_db),
+    user: User    = Depends(get_current_user),
+):
+    dataset = db.query(Dataset).filter(Dataset.id == body.dataset_id).first()
+    if not dataset:
+        raise HTTPException(404, "Dataset not found")
+    if dataset.owner_id == user.id:
+        raise HTTPException(400, "You own this dataset")
+
+    existing = db.query(AccessRequest).filter(
+        AccessRequest.requester_id == user.id,
+        AccessRequest.dataset_id   == body.dataset_id,
+        AccessRequest.status       == "pending",
+    ).first()
+    if existing:
+        raise HTTPException(409, "Access request already pending")
+
+    req = AccessRequest(
+        requester_id=user.id,
+        dataset_id=body.dataset_id,
+        purpose=body.purpose,
+    )
+    db.add(req)
+    db.commit()
+    db.refresh(req)
+    return {"request_id": req.id, "status": req.status}
+
+
+@router.post("/decide")
+def decide_request(
+    body: DecisionIn,
+    db:   Session = Depends(get_db),
+    user: User    = Depends(get_current_user),
+):
+    req = db.query(AccessRequest).filter(AccessRequest.id == body.request_id).first()
+    if not req:
+        raise HTTPException(404, "Request not found")
+
+    dataset = db.query(Dataset).filter(Dataset.id == req.dataset_id).first()
+    if dataset.owner_id != user.id:
+        raise HTTPException(403, "Only the dataset owner can decide")
+    if body.decision not in ("approved", "rejected"):
+        raise HTTPException(400, "decision must be approved or rejected")
+
+    req.status     = body.decision
+    req.updated_at = datetime.utcnow()
+    if body.decision == "approved":
+        req.expires_at = datetime.utcnow() + timedelta(days=body.days_valid)
+
+    db.commit()
+    return {"request_id": req.id, "status": req.status, "expires_at": req.expires_at}
+
+
+@router.get("/incoming")
+def incoming_requests(
+    db:   Session = Depends(get_db),
+    user: User    = Depends(get_current_user),
+):
+    """Requests made to the current user's datasets."""
+    my_dataset_ids = [d.id for d in db.query(Dataset).filter(Dataset.owner_id == user.id).all()]
+    reqs = db.query(AccessRequest).filter(AccessRequest.dataset_id.in_(my_dataset_ids)).all()
+    return [_fmt(r, db) for r in reqs]
+
+
+@router.get("/outgoing")
+def outgoing_requests(
+    db:   Session = Depends(get_db),
+    user: User    = Depends(get_current_user),
+):
+    """Requests the current user has made."""
+    reqs = db.query(AccessRequest).filter(AccessRequest.requester_id == user.id).all()
+    return [_fmt(r, db) for r in reqs]
+
+
+def _fmt(r: AccessRequest, db: Session) -> dict:
+    dataset  = db.query(Dataset).filter(Dataset.id == r.dataset_id).first()
+    requester = db.query(User).filter(User.id == r.requester_id).first()
+    return {
+        "request_id":    r.id,
+        "dataset_id":    r.dataset_id,
+        "dataset_title": dataset.title if dataset else "Unknown",
+        "requester":     requester.username if requester else "Unknown",
+        "purpose":       r.purpose,
+        "status":        r.status,
+        "expires_at":    r.expires_at.isoformat() if r.expires_at else None,
+        "created_at":    r.created_at.isoformat(),
+    }

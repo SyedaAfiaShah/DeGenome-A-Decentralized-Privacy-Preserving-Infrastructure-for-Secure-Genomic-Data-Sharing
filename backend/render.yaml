@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: degenome-api
+    env: python
+    buildCommand: pip install -r requirements.txt && python scripts/gen_keys.py
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PINATA_API_KEY
+        sync: false
+      - key: PINATA_SECRET_API_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: ENVIRONMENT
+        value: production
