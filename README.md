@@ -13,6 +13,8 @@ The reason is not technical. It is personal. Genomic data reveals deeply private
 
 DeGenome is built to change that.
 
+[See live demo](https://degenome.vercel.app/)
+
 ---
 
 ## The core idea
