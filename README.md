@@ -1,5 +1,5 @@
 # DeGenome
-### Decentralized Privacy-Preserving Infrastructure for Secure Genomic Data Sharing
+### Decentralized Privacy-Preserving Infrastructure for Secure Genomic Data Sharing and Controlled Computation
 
 ---
 
