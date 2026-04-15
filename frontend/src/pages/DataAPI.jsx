@@ -1,26 +1,29 @@
 import { useState, useEffect } from 'react'
-import { listDatasets, getFeatureSchema, getFeatures, getBatchData } from '../services/api'
+import { listDatasets, getFeatureSchema, getFeatures, getBatchData, queryFeatures } from '../services/api'
 import FeatureViewer from '../components/FeatureViewer'
+import QueryBuilder from '../components/QueryBuilder'
 import useAuthStore from '../store/authStore'
 import { Play, ChevronDown, AlertCircle, Zap } from 'lucide-react'
 
 const ENDPOINTS = [
-  { key: 'get_features',  label: 'get_features',  cost: 1, desc: 'Single feature vector for a dataset' },
-  { key: 'get_batch',     label: 'get_batch_data', cost: 2, desc: 'Batch of feature vectors' },
-  { key: 'get_schema',    label: 'get_feature_schema', cost: 0, desc: 'Full feature schema (free)' },
+  { key: 'get_features',   label: 'get_features',      cost: 1, desc: 'Single feature vector for a dataset' },
+  { key: 'get_batch',      label: 'get_batch_data',    cost: 2, desc: 'Batch of feature vectors' },
+  { key: 'get_schema',     label: 'get_feature_schema',cost: 0, desc: 'Full feature schema (free)' },
+  { key: 'query_features', label: 'query_features',    cost: 1, desc: 'Filter features by type, chromosome, or value range' },
 ]
 
 export default function DataAPI() {
   const { user, updateCredits } = useAuthStore()
-  const [datasets,  setDatasets]  = useState([])
-  const [datasetId, setDatasetId] = useState('')
-  const [endpoint,  setEndpoint]  = useState('get_features')
-  const [sparse,    setSparse]    = useState(true)
-  const [batchSize, setBatchSize] = useState(5)
-  const [result,    setResult]    = useState(null)
-  const [schema,    setSchema]    = useState(null)
-  const [busy,      setBusy]      = useState(false)
-  const [err,       setErr]       = useState('')
+  const [datasets,    setDatasets]   = useState([])
+  const [datasetId,   setDatasetId]  = useState('')
+  const [endpoint,    setEndpoint]   = useState('get_features')
+  const [sparse,      setSparse]     = useState(true)
+  const [batchSize,   setBatchSize]  = useState(5)
+  const [queryParams, setQueryParams]= useState({ featureType: '', chromosome: '', rangeMin: '', rangeMax: '' })
+  const [result,      setResult]     = useState(null)
+  const [schema,      setSchema]     = useState(null)
+  const [busy,        setBusy]       = useState(false)
+  const [err,         setErr]        = useState('')
 
   useEffect(() => {
     listDatasets().then(r => { setDatasets(r.data); if (r.data.length) setDatasetId(r.data[0].dataset_id) }).catch(() => {})
@@ -35,6 +38,13 @@ export default function DataAPI() {
         res = await getFeatures(datasetId, sparse)
       } else if (endpoint === 'get_batch') {
         res = await getBatchData(datasetId, batchSize, 0, sparse)
+      } else if (endpoint === 'query_features') {
+        const body = { dataset_id: datasetId }
+        if (queryParams.featureType)        body.feature_type = queryParams.featureType
+        if (queryParams.chromosome.trim())  body.chromosome   = queryParams.chromosome.trim()
+        if (queryParams.rangeMin !== '' && queryParams.rangeMax !== '')
+          body.range = [parseFloat(queryParams.rangeMin), parseFloat(queryParams.rangeMax)]
+        res = await queryFeatures(body)
       } else {
         res = await getFeatureSchema(datasetId)
         setSchema(res.data)
@@ -96,8 +106,13 @@ export default function DataAPI() {
                 </div>
               </div>
 
+              {/* Query filters */}
+              {endpoint === 'query_features' && (
+                <QueryBuilder params={queryParams} onChange={setQueryParams} />
+              )}
+
               {/* Options */}
-              {endpoint !== 'get_schema' && (
+              {endpoint !== 'get_schema' && endpoint !== 'query_features' && (
                 <div className="flex items-center gap-4">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={sparse} onChange={e => setSparse(e.target.checked)}
@@ -185,6 +200,16 @@ export default function DataAPI() {
                       </div>
                     ))}
                   </div>
+                </div>
+              ) : endpoint === 'query_features' && result.features ? (
+                <div>
+                  <p className="text-xs text-muted mb-4 font-mono">
+                    {result.matched_count} feature{result.matched_count !== 1 ? 's' : ''} matched
+                  </p>
+                  <FeatureViewer
+                    features={result.features}
+                    schema={schema?.schema?.map(f => f.feature) || []}
+                  />
                 </div>
               ) : (
                 <FeatureViewer

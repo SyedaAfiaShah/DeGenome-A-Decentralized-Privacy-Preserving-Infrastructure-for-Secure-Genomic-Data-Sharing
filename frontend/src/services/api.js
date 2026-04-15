@@ -22,14 +22,17 @@ api.interceptors.response.use(
 )
 
 // Auth
-export const register    = d  => api.post('/auth/register', d)
-export const login       = d  => api.post('/auth/login', d)
+export const register    = d    => api.post('/auth/register', d)
+export const login       = d    => api.post('/auth/login', d)
+export const switchRole  = role => api.patch('/auth/role', { role })
+export const createApiKey= name => api.post('/auth/api-keys', { name })
+export const listApiKeys = ()   => api.get('/auth/api-keys')
 
 // Datasets
-export const listDatasets    = (fmt) => api.get('/datasets/', { params: fmt ? { format_type: fmt } : {} })
-export const myDatasets      = ()    => api.get('/datasets/my')
-export const uploadDataset   = (fd)  => api.post('/datasets/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
-export const getPublicKey    = ()    => api.get('/datasets/public_key')
+export const listDatasets          = (fmt) => api.get('/datasets/', { params: fmt ? { format_type: fmt } : {} })
+export const myDatasets            = ()    => api.get('/datasets/my')
+export const getPresignedUploadUrl = (filename, format_type) => api.get('/datasets/presign', { params: { filename, format_type } })
+export const registerDataset       = (body) => api.post('/datasets/register', body)
 
 // Data API
 export const getDatasetInfo  = (id)             => api.get('/data/info',    { params: { dataset_id: id } })
@@ -37,6 +40,7 @@ export const getFeatureSchema= (id)             => api.get('/data/schema',  { pa
 export const getFeatures     = (id, sparse=true)=> api.get('/data/features',{ params: { dataset_id: id, sparse } })
 export const getBatchData    = (id, size=10, offset=0, sparse=true) =>
   api.get('/data/batch', { params: { dataset_id: id, batch_size: size, offset, sparse } })
+export const queryFeatures   = (body)           => api.post('/data/query', body)
 
 // Access
 export const requestAccess   = (d)  => api.post('/access/request', d)

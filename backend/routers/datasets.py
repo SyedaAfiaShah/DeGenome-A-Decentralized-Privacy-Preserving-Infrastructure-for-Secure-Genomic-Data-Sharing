@@ -1,13 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from typing import Any
 from models.database import get_db
 from models.db import Dataset, User
 from services.auth import get_current_user
-from services.ipfs import pin_bytes, pin_json
-from services.crypto import get_public_key_pem
-from processing.feature_extraction import extract_features, build_full_schema
-from processing.privacy import add_laplace_noise, strip_zeros
+from services.ipfs import pin_json
+from services.storj import generate_presigned_upload_url
 import json
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
@@ -15,93 +14,95 @@ router = APIRouter(prefix="/datasets", tags=["datasets"])
 ALLOWED_FORMATS = {"fasta", "vcf"}
 
 
-class MetadataIn(BaseModel):
-    title:             str
-    description:       str
-    format_type:       str
-    encrypted_aes_key: str   # RSA-wrapped AES key (base64)
-    ipfs_cid:          str   # CID of encrypted raw data already uploaded by client
+class RegisterIn(BaseModel):
+    title:           str
+    description:     str
+    format_type:     str
+    object_key:      str          # Storj object key returned by /presign
+    epsilon:         float
+    feature_vector:  dict[str, float]
+    feature_schema:  list[str]
+    active_features: list[str]
+    regions:         list[str]
 
 
-@router.post("/upload")
-async def upload_dataset(
-    file:        UploadFile = File(...),
-    title:       str        = Form(...),
-    description: str        = Form(""),
-    epsilon:     float      = Form(1.0),
-    current_user: User      = Depends(get_current_user),
-    db:          Session    = Depends(get_db),
+@router.get("/presign")
+def presign_upload(
+    filename:    str = Query(..., description="Original filename (e.g. sample.vcf)"),
+    format_type: str = Query(..., description="File format: fasta or vcf"),
+    current_user: User = Depends(get_current_user),
 ):
     """
-    Receive the raw genomic file server-side, extract features, apply DP noise,
-    encrypt and pin to IPFS, then store only metadata + feature vector.
-    Note: in production, extraction should move client-side (WASM).
+    Return a short-lived presigned PUT URL so the browser can upload a raw
+    genomic file directly to Storj.  The server never touches the file content.
     """
-    ext = (file.filename or "").rsplit(".", 1)[-1].lower()
-    fmt = "fasta" if ext in ("fa", "fasta") else "vcf" if ext == "vcf" else None
-    if not fmt:
-        raise HTTPException(400, "Only .fasta, .fa, and .vcf files are supported")
+    fmt = format_type.lower()
+    if fmt not in ALLOWED_FORMATS:
+        raise HTTPException(400, f"format_type must be one of: {', '.join(ALLOWED_FORMATS)}")
 
-    content_bytes = await file.read()
     try:
-        content_str = content_bytes.decode("utf-8", errors="ignore")
-    except Exception:
-        raise HTTPException(400, "Could not decode file as text")
+        result = generate_presigned_upload_url(filename, fmt)
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
 
-    # Feature extraction
-    try:
-        raw_features = extract_features(content_str, fmt)
-    except ValueError as e:
-        raise HTTPException(422, str(e))
+    return result
 
-    # Differential privacy
-    noised   = add_laplace_noise(raw_features, epsilon=epsilon)
-    sparse   = strip_zeros(noised)
-    schema   = build_full_schema(fmt, sparse)
 
-    # Pin encrypted blob to IPFS (client should send pre-encrypted; server-side is PoC)
-    cid = pin_bytes(content_bytes, file.filename or "genomic_data")
+@router.post("/register")
+def register_dataset(
+    body: RegisterIn,
+    current_user: User = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """
+    Called after the browser has uploaded the raw file to Storj.
+    Accepts client-side feature extraction results, pins metadata to IPFS,
+    and persists the dataset row.  The server never sees the raw genomic data.
+    """
+    fmt = body.format_type.lower()
+    if fmt not in ALLOWED_FORMATS:
+        raise HTTPException(400, f"format_type must be one of: {', '.join(ALLOWED_FORMATS)}")
 
-    # Build and pin metadata JSON to IPFS (tamper-resistant metadata)
     metadata_json = {
-        "owner":        current_user.username,
-        "title":        title,
-        "description":  description,
-        "format_type":  fmt,
-        "ipfs_cid":     cid,
-        "feature_schema": schema["all_features"],
-        "active_features": schema["active_features"],
-        "epsilon":      epsilon,
+        "owner":           current_user.username,
+        "title":           body.title,
+        "description":     body.description,
+        "format_type":     fmt,
+        "object_key":      body.object_key,
+        "feature_schema":  body.feature_schema,
+        "active_features": body.active_features,
+        "epsilon":         body.epsilon,
+        "regions":         body.regions,
     }
-    metadata_cid = pin_json(metadata_json, name=title)
 
-    # Regions: chromosomes for VCF, empty for FASTA
-    regions = sorted({k.split("_")[1] for k in sparse if k.startswith("chr_")}) if fmt == "vcf" else []
+    try:
+        metadata_cid = pin_json(metadata_json, name=body.title)
+    except Exception as e:
+        raise HTTPException(502, f"IPFS pin failed: {e}")
 
     dataset = Dataset(
         owner_id        = current_user.id,
-        title           = title,
-        description     = description,
+        title           = body.title,
+        description     = body.description,
         format_type     = fmt,
-        ipfs_cid        = cid,
+        storj_key       = body.object_key,
         metadata_cid    = metadata_cid,
-        feature_schema  = schema["all_features"],
-        active_features = schema["active_features"],
-        feature_vector  = sparse,
+        feature_schema  = body.feature_schema,
+        active_features = body.active_features,
+        feature_vector  = body.feature_vector,
         sample_count    = 1,
-        regions         = regions,
+        regions         = body.regions,
     )
     db.add(dataset)
     db.commit()
     db.refresh(dataset)
 
     return {
-        "dataset_id":     dataset.id,
-        "ipfs_cid":       cid,
-        "metadata_cid":   metadata_cid,
-        "active_features": schema["active_features"],
-        "feature_count":  len(sparse),
-        "epsilon":        epsilon,
+        "dataset_id":      dataset.id,
+        "metadata_cid":    metadata_cid,
+        "active_features": body.active_features,
+        "feature_count":   len(body.active_features),
+        "epsilon":         body.epsilon,
     }
 
 
@@ -127,22 +128,16 @@ def my_datasets(
     return [_dataset_summary(d) for d in datasets]
 
 
-@router.get("/public_key")
-def public_key():
-    """Return server RSA public key so client can wrap AES keys."""
-    return {"public_key": get_public_key_pem()}
-
-
 def _dataset_summary(d: Dataset) -> dict:
     return {
-        "dataset_id":     d.id,
-        "title":          d.title,
-        "description":    d.description,
-        "format_type":    d.format_type,
+        "dataset_id":      d.id,
+        "title":           d.title,
+        "description":     d.description,
+        "format_type":     d.format_type,
         "active_features": d.active_features,
-        "feature_count":  len(d.active_features or []),
-        "regions":        d.regions,
-        "sample_count":   d.sample_count,
-        "metadata_cid":   d.metadata_cid,
-        "created_at":     d.created_at.isoformat(),
+        "feature_count":   len(d.active_features or []),
+        "regions":         d.regions,
+        "sample_count":    d.sample_count,
+        "metadata_cid":    d.metadata_cid,
+        "created_at":      d.created_at.isoformat(),
     }

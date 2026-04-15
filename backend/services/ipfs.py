@@ -15,14 +15,6 @@ def _headers():
     }
 
 
-def pin_bytes(data: bytes, filename: str) -> str:
-    """Pin raw bytes to IPFS via Pinata. Returns CID."""
-    url  = f"{PINATA_BASE}/pinning/pinFileToIPFS"
-    resp = requests.post(url, files={"file": (filename, data)}, headers=_headers())
-    resp.raise_for_status()
-    return resp.json()["IpfsHash"]
-
-
 def pin_json(data: dict, name: str = "metadata") -> str:
     """Pin a JSON object to IPFS via Pinata. Returns CID."""
     url  = f"{PINATA_BASE}/pinning/pinJSONToIPFS"

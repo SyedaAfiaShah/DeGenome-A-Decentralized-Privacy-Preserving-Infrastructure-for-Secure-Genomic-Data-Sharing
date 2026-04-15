@@ -1,22 +1,51 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { getBalance, getCreditHistory, myDatasets, getQueryLogs } from '../services/api'
+import { getBalance, getCreditHistory, myDatasets, getQueryLogs, createApiKey, listApiKeys } from '../services/api'
 import useAuthStore from '../store/authStore'
-import { Upload, Database, Activity, TrendingUp, Clock } from 'lucide-react'
+import { Upload, Database, Activity, TrendingUp, Clock, Key, Plus, Copy, Check, AlertTriangle } from 'lucide-react'
 
 export default function Dashboard() {
   const { user, updateCredits, isContributor } = useAuthStore()
-  const [balance,  setBalance]  = useState(null)
-  const [history,  setHistory]  = useState([])
-  const [datasets, setDatasets] = useState([])
-  const [logs,     setLogs]     = useState([])
+  const [balance,    setBalance]   = useState(null)
+  const [history,    setHistory]   = useState([])
+  const [datasets,   setDatasets]  = useState([])
+  const [logs,       setLogs]      = useState([])
+  const [apiKeys,    setApiKeys]   = useState([])
+  const [keyName,    setKeyName]   = useState('')
+  const [newKey,     setNewKey]    = useState(null)   // { key, name, key_prefix } — shown once
+  const [keyCopied,  setKeyCopied] = useState(false)
+  const [keyBusy,    setKeyBusy]   = useState(false)
+  const [keyErr,     setKeyErr]    = useState('')
 
   useEffect(() => {
     getBalance().then(r => { setBalance(r.data); updateCredits(r.data.credits, r.data.earnings) }).catch(() => {})
     getCreditHistory().then(r => setHistory(r.data)).catch(() => {})
     getQueryLogs().then(r => setLogs(r.data)).catch(() => {})
     if (isContributor()) myDatasets().then(r => setDatasets(r.data)).catch(() => {})
+    listApiKeys().then(r => setApiKeys(r.data)).catch(() => {})
   }, [])
+
+  const handleGenerateKey = async () => {
+    if (!keyName.trim() || keyBusy) return
+    setKeyBusy(true); setKeyErr('')
+    try {
+      const { data } = await createApiKey(keyName.trim())
+      setNewKey(data)
+      setApiKeys(prev => [{ id: data.id, name: data.name, key_prefix: data.key_prefix,
+                             created_at: data.created_at, last_used_at: null }, ...prev])
+      setKeyName('')
+    } catch (e) {
+      setKeyErr(e.response?.data?.detail || 'Failed to generate key')
+    } finally { setKeyBusy(false) }
+  }
+
+  const copyKey = () => {
+    navigator.clipboard.writeText(newKey.key)
+    setKeyCopied(true)
+    setTimeout(() => setKeyCopied(false), 2000)
+  }
+
+  const dismissNewKey = () => { setNewKey(null); setKeyCopied(false) }
 
   return (
     <div className="page">
@@ -124,6 +153,76 @@ export default function Dashboard() {
                 ))}
               </div>}
         </div>
+      </div>
+
+      {/* API Keys */}
+      <div className="card mt-6">
+        <p className="section-title flex items-center gap-2"><Key size={11} /> api keys</p>
+
+        {/* One-time reveal banner */}
+        {newKey && (
+          <div className="mb-5 rounded-lg border border-yellow-700/40 bg-yellow-900/10 p-4 space-y-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={13} className="text-yellow-400 mt-0.5 shrink-0" />
+              <p className="text-xs text-yellow-300">
+                Copy your key now — it will not be shown again.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 font-mono text-xs text-soft bg-ink/60 border border-edge rounded-lg px-3 py-2 break-all">
+                {newKey.key}
+              </code>
+              <button onClick={copyKey}
+                className="shrink-0 p-2 rounded-lg border border-edge hover:border-cyan/30 transition-colors">
+                {keyCopied
+                  ? <Check size={13} className="text-green-400" />
+                  : <Copy size={13} className="text-muted" />}
+              </button>
+            </div>
+            <button onClick={dismissNewKey}
+              className="text-[10px] text-muted hover:text-soft transition-colors">
+              I've saved it — dismiss
+            </button>
+          </div>
+        )}
+
+        {/* Generate form */}
+        <div className="flex items-center gap-3 mb-5">
+          <input className="input flex-1" placeholder="Key name, e.g. jupyter-notebook"
+            value={keyName} onChange={e => setKeyName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleGenerateKey()} />
+          <button onClick={handleGenerateKey} disabled={!keyName.trim() || keyBusy}
+            className="btn-primary shrink-0 flex items-center gap-2 disabled:opacity-40">
+            <Plus size={13} />
+            {keyBusy ? 'Generating…' : 'Generate'}
+          </button>
+        </div>
+        {keyErr && (
+          <p className="text-xs text-red-400 mb-4">{keyErr}</p>
+        )}
+
+        {/* Existing keys */}
+        {apiKeys.length === 0
+          ? <p className="text-xs text-muted">No API keys yet.</p>
+          : <div className="space-y-2">
+              {apiKeys.map(k => (
+                <div key={k.id}
+                  className="flex items-center justify-between py-2 border-b border-edge last:border-0">
+                  <div className="min-w-0">
+                    <p className="text-xs text-soft font-display truncate">{k.name}</p>
+                    <p className="text-[10px] font-mono text-muted">{k.key_prefix}…</p>
+                  </div>
+                  <div className="text-right shrink-0 ml-4">
+                    {k.last_used_at
+                      ? <p className="text-[10px] text-muted">used {new Date(k.last_used_at).toLocaleDateString()}</p>
+                      : <p className="text-[10px] text-muted/50">never used</p>}
+                    <p className="text-[10px] text-muted/50">
+                      created {new Date(k.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>}
       </div>
     </div>
   )

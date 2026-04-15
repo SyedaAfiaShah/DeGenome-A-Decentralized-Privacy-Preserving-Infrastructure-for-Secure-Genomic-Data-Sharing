@@ -1,11 +1,13 @@
 import bcrypt
+import hashlib
+import secrets
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from models.database import get_db
-from models.db import User
+from models.db import User, ApiKey
 import os
 from dotenv import load_dotenv
 
@@ -36,12 +38,48 @@ def decode_token(token: str) -> dict:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
 
+# ── API key helpers ────────────────────────────────────────────────────────────
+
+def generate_api_key() -> tuple[str, str, str]:
+    """Return (raw_key, key_hash, key_prefix).
+    raw_key  — shown to the user once, never stored.
+    key_hash — SHA-256 hex digest stored in DB for constant-time lookup.
+    key_prefix — first 11 chars ('dg_' + 8 hex) shown in key listings.
+    """
+    raw    = "dg_" + secrets.token_hex(24)
+    hashed = hashlib.sha256(raw.encode()).hexdigest()
+    return raw, hashed, raw[:11]
+
+def hash_api_key(raw: str) -> str:
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+# ── Unified auth dependency ────────────────────────────────────────────────────
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer),
     db: Session = Depends(get_db)
 ) -> User:
-    payload = decode_token(credentials.credentials)
-    user = db.query(User).filter(User.id == payload["sub"]).first()
+    token = credentials.credentials
+
+    if token.startswith("dg_"):
+        # API key path — look up by SHA-256 hash
+        key_hash = hash_api_key(token)
+        api_key  = db.query(ApiKey).filter(
+            ApiKey.key_hash  == key_hash,
+            ApiKey.is_active == True,
+        ).first()
+        if not api_key:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail="Invalid or revoked API key")
+        api_key.last_used_at = datetime.utcnow()
+        db.commit()
+        user = db.query(User).filter(User.id == api_key.user_id).first()
+    else:
+        # JWT path
+        payload = decode_token(token)
+        user    = db.query(User).filter(User.id == payload["sub"]).first()
+
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user

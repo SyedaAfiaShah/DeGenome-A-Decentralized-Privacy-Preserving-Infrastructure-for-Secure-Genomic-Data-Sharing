@@ -22,6 +22,13 @@ const useAuthStore = create((set, get) => ({
     set({ user })
   },
 
+  updateRole: (role, token) => {
+    const user = { ...get().user, role }
+    localStorage.setItem('dg_user', JSON.stringify(user))
+    localStorage.setItem('dg_token', token)
+    set({ user, token })
+  },
+
   logout: () => {
     localStorage.removeItem('dg_token')
     localStorage.removeItem('dg_user')

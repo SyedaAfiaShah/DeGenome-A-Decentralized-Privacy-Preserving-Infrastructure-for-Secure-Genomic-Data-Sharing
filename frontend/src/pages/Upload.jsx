@@ -1,21 +1,22 @@
 import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Upload as UploadIcon, FileText, Shield, CheckCircle, AlertCircle, Lock } from 'lucide-react'
-import { uploadDataset, getPublicKey } from '../services/api'
-import { encryptFile } from '../utils/crypto'
+import { getPresignedUploadUrl, registerDataset } from '../services/api'
+import { extractFeatures, buildFullSchema } from '../utils/featureExtraction'
+import { addLaplaceNoise, stripZeros } from '../utils/privacy'
 
-const STEPS = ['select', 'encrypting', 'uploading', 'done']
+const STEPS = ['select', 'extracting', 'uploading', 'done']
 
 export default function Upload() {
-  const [file,     setFile]    = useState(null)
-  const [title,    setTitle]   = useState('')
-  const [desc,     setDesc]    = useState('')
-  const [epsilon,  setEpsilon] = useState(1.0)
-  const [step,     setStep]    = useState('select')
-  const [result,   setResult]  = useState(null)
-  const [err,      setErr]     = useState('')
-  const inputRef               = useRef()
-  const navigate               = useNavigate()
+  const [file,    setFile]   = useState(null)
+  const [title,   setTitle]  = useState('')
+  const [desc,    setDesc]   = useState('')
+  const [epsilon, setEpsilon]= useState(1.0)
+  const [step,    setStep]   = useState('select')
+  const [result,  setResult] = useState(null)
+  const [err,     setErr]    = useState('')
+  const inputRef             = useRef()
+  const navigate             = useNavigate()
 
   const fmt = file ? (file.name.endsWith('.vcf') ? 'vcf' : 'fasta') : null
 
@@ -36,21 +37,36 @@ export default function Upload() {
     setErr('')
 
     try {
-      // Step 1: encrypt
-      setStep('encrypting')
-      const bytes = await file.arrayBuffer()
-      const { data: keyData } = await getPublicKey()
-      const { encryptedBlob, encryptedAesKey } = await encryptFile(new Uint8Array(bytes), keyData.public_key)
+      // Step 2: local feature extraction — no network calls
+      setStep('extracting')
+      const content = await file.text()
+      const raw     = extractFeatures(content, fmt)
+      const noised  = addLaplaceNoise(raw, epsilon)
+      const sparse  = stripZeros(noised)
+      const schema  = buildFullSchema(fmt, sparse)
 
-      // Step 2: upload (server extracts features from original, stores encrypted blob)
+      // Step 3: presign → PUT directly to Storj → register metadata
       setStep('uploading')
-      const fd = new FormData()
-      fd.append('file',        file)   // server does feature extraction from this
-      fd.append('title',       title)
-      fd.append('description', desc)
-      fd.append('epsilon',     epsilon)
+      const { data: presign } = await getPresignedUploadUrl(file.name, fmt)
 
-      const { data } = await uploadDataset(fd)
+      await fetch(presign.url, {
+        method:  'PUT',
+        headers: { 'Content-Type': 'text/plain' },
+        body:    await file.arrayBuffer(),
+      })
+
+      const { data } = await registerDataset({
+        title,
+        description:     desc,
+        format_type:     fmt,
+        object_key:      presign.object_key,
+        epsilon,
+        feature_vector:  sparse,
+        feature_schema:  schema.all_features,
+        active_features: schema.active_features,
+        regions:         [],
+      })
+
       setResult(data)
       setStep('done')
     } catch (e) {
@@ -71,7 +87,6 @@ export default function Upload() {
 
           <div className="space-y-3 text-left mb-6">
             <Row label="Dataset ID"      value={result.dataset_id} mono />
-            <Row label="IPFS CID"        value={result.ipfs_cid}  mono />
             <Row label="Metadata CID"    value={result.metadata_cid} mono />
             <Row label="Active features" value={`${result.feature_count} features extracted`} />
             <Row label="Privacy (ε)"     value={result.epsilon} />
@@ -97,10 +112,10 @@ export default function Upload() {
       {/* Privacy pipeline visual */}
       <div className="card-sm mb-6 flex items-center gap-0 overflow-x-auto">
         {[
-          { icon: FileText, label: 'raw file',   sub: 'stays local' },
-          { icon: Shield,   label: 'extract',    sub: 'client-side' },
-          { icon: Lock,     label: 'dp noise',   sub: `ε=${epsilon}` },
-          { icon: UploadIcon,label:'upload',     sub: 'features only' },
+          { icon: FileText,   label: 'raw file', sub: 'stays local' },
+          { icon: Shield,     label: 'extract',  sub: 'client-side' },
+          { icon: Lock,       label: 'dp noise', sub: `ε=${epsilon}` },
+          { icon: UploadIcon, label: 'upload',   sub: 'features only' },
         ].map(({ icon: Icon, label, sub }, i, arr) => (
           <div key={label} className="flex items-center">
             <div className={`flex flex-col items-center px-4 py-2 ${
@@ -174,8 +189,8 @@ export default function Upload() {
 
         <button type="submit" disabled={!file || !title || step !== 'select'}
           className="btn-primary w-full justify-center disabled:opacity-40 disabled:cursor-not-allowed">
-          {step === 'encrypting' ? '🔐 Encrypting…'
-           : step === 'uploading' ? '📡 Uploading to IPFS…'
+          {step === 'extracting' ? '🔬 Extracting features…'
+           : step === 'uploading' ? '📡 Uploading…'
            : 'Upload dataset'}
         </button>
       </form>

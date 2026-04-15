@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from typing import Optional, Any
 from models.database import get_db
 from models.db import Dataset, AccessRequest, User
 from services.auth import get_current_user
@@ -7,6 +9,32 @@ from services.credits import charge_researcher
 from datetime import datetime
 
 router = APIRouter(prefix="/data", tags=["data"])
+
+# ── Feature-type membership sets ──────────────────────────────────────────────
+
+_NUCLEOTIDE_KEYS: set[str] = {
+    "A_count", "T_count", "G_count", "C_count", "N_count",
+    "GC_content", "AT_content", "N_ratio", "shannon_entropy",
+    "sequence_length", "sequence_count",
+}
+
+_VARIANT_KEYS: set[str] = {
+    "total_variants", "snp_count", "indel_count", "snp_ratio",
+    "ts_count", "tv_count", "ts_tv_ratio",
+    "het_count", "hom_count", "het_ratio",
+    "allele_freq_mean", "allele_freq_std", "allele_freq_min", "allele_freq_max",
+    "chromosome_count",
+}
+
+_VALID_FEATURE_TYPES = {"nucleotide", "kmer", "snp"}
+
+
+class QueryIn(BaseModel):
+    dataset_id:   str
+    feature_type: Optional[str]              = None   # nucleotide | kmer | SNP
+    chromosome:   Optional[str]              = None
+    range:        Optional[list[float]]      = None   # [min, max]
+    filters:      Optional[dict[str, Any]]   = None   # exact-match overrides
 
 
 def _check_access(researcher: User, dataset: Dataset, db: Session):
@@ -154,4 +182,73 @@ def get_batch_data(
         "total":       d.sample_count,
         "sparse":      sparse,
         "data":        batch,
+    }
+
+
+@router.post("/query")
+def query_features(
+    body: QueryIn,
+    db:   Session = Depends(get_db),
+    user: User    = Depends(get_current_user),
+):
+    """
+    Filtered feature query.  Access-checked and credit-charged like /features.
+    Supports filtering by feature type, chromosome, value range, and exact key/value pairs.
+    """
+    if body.feature_type and body.feature_type.lower() not in _VALID_FEATURE_TYPES:
+        raise HTTPException(400, f"feature_type must be one of: {', '.join(sorted(_VALID_FEATURE_TYPES))}")
+
+    if body.range is not None and len(body.range) != 2:
+        raise HTTPException(400, "range must be an array of exactly two numbers [min, max]")
+
+    d = _get_dataset_or_404(body.dataset_id, db)
+    _check_access(user, d, db)
+
+    owner = db.query(User).filter(User.id == d.owner_id).first()
+    charge_researcher(user, owner, "query_features", body.dataset_id, db)
+
+    features: dict[str, Any] = dict(d.feature_vector or {})
+
+    # ── Filter by feature type ─────────────────────────────────────────────
+    if body.feature_type:
+        ft = body.feature_type.lower()
+        if ft == "nucleotide":
+            features = {k: v for k, v in features.items() if k in _NUCLEOTIDE_KEYS}
+        elif ft == "kmer":
+            features = {k: v for k, v in features.items() if k.startswith("kmer_")}
+        elif ft == "snp":
+            features = {k: v for k, v in features.items()
+                        if k in _VARIANT_KEYS or k.startswith("chr_")}
+
+    # ── Filter by chromosome ───────────────────────────────────────────────
+    if body.chromosome:
+        safe   = body.chromosome.lower().strip().removeprefix("chr").strip("_")
+        prefix = f"chr_{safe}_"
+        features = {k: v for k, v in features.items() if k.startswith(prefix)}
+
+    # ── Filter by value range ──────────────────────────────────────────────
+    if body.range is not None:
+        lo, hi = float(body.range[0]), float(body.range[1])
+        features = {
+            k: v for k, v in features.items()
+            if isinstance(v, (int, float)) and lo <= v <= hi
+        }
+
+    # ── Apply exact key/value filters ─────────────────────────────────────
+    if body.filters:
+        features = {
+            k: v for k, v in features.items()
+            if k not in body.filters or v == body.filters[k]
+        }
+
+    return {
+        "dataset_id":    d.id,
+        "matched_count": len(features),
+        "features":      features,
+        "query": {
+            "feature_type": body.feature_type,
+            "chromosome":   body.chromosome,
+            "range":        body.range,
+            "filters":      body.filters,
+        },
     }

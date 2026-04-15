@@ -10,9 +10,6 @@ __pycache__/
 venv/
 *.egg-info/
 
-# Keys — NEVER commit
-backend/keys/
-
 # Database
 *.db
 *.sqlite

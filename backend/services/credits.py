@@ -4,9 +4,10 @@ from datetime import datetime
 
 
 COSTS = {
-    "get_features":    1.0,
-    "get_batch_data":  2.0,
-    "get_dataset_info": 0.0,
+    "get_features":       1.0,
+    "get_batch_data":     2.0,
+    "query_features":     1.0,
+    "get_dataset_info":   0.0,
     "get_feature_schema": 0.0,
 }
 

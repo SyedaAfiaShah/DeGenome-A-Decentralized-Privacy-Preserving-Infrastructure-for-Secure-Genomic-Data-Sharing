@@ -22,6 +22,7 @@ class User(Base):
     datasets         = relationship("Dataset", back_populates="owner")
     access_requests  = relationship("AccessRequest", back_populates="requester", foreign_keys="AccessRequest.requester_id")
     query_logs       = relationship("QueryLog", back_populates="user")
+    api_keys         = relationship("ApiKey", back_populates="user")
 
 
 class Dataset(Base):
@@ -31,9 +32,8 @@ class Dataset(Base):
     title            = Column(String, nullable=False)
     description      = Column(Text)
     format_type      = Column(String, nullable=False)       # fasta | vcf
-    ipfs_cid         = Column(String)                       # encrypted raw data CID
+    storj_key        = Column(String)                       # Storj object key for raw file
     metadata_cid     = Column(String)                       # metadata JSON CID on IPFS
-    encrypted_aes_key= Column(Text)                         # RSA-wrapped AES key
     feature_schema   = Column(JSON)                         # list of all possible feature names
     active_features  = Column(JSON)                         # list of non-zero feature names
     feature_vector   = Column(JSON)                         # DP-noised feature values (sparse)
@@ -71,6 +71,20 @@ class QueryLog(Base):
     timestamp   = Column(DateTime, default=datetime.utcnow)
 
     user        = relationship("User", back_populates="query_logs")
+
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+    id           = Column(String, primary_key=True, default=gen_id)
+    user_id      = Column(String, ForeignKey("users.id"), nullable=False)
+    key_hash     = Column(String, nullable=False, index=True)   # SHA-256 of raw key
+    key_prefix   = Column(String, nullable=False)               # first 11 chars for display
+    name         = Column(String, nullable=False)
+    created_at   = Column(DateTime, default=datetime.utcnow)
+    last_used_at = Column(DateTime, nullable=True)
+    is_active    = Column(Boolean, default=True)
+
+    user         = relationship("User", back_populates="api_keys")
 
 
 class CreditTransaction(Base):

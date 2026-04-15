@@ -1,11 +1,14 @@
+import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import useAuthStore from '../store/authStore'
-import { Dna, LogOut, LayoutDashboard, Upload, Database, Bell, Activity } from 'lucide-react'
+import { switchRole } from '../services/api'
+import { Dna, LogOut, LayoutDashboard, Upload, Database, Bell, Activity, ArrowLeftRight } from 'lucide-react'
 
 export default function Navbar() {
-  const { user, logout, isAuthenticated } = useAuthStore()
-  const navigate  = useNavigate()
-  const location  = useLocation()
+  const { user, logout, isAuthenticated, updateRole } = useAuthStore()
+  const navigate    = useNavigate()
+  const location    = useLocation()
+  const [switching, setSwitching] = useState(false)
 
   const nav = [
     { to: '/dashboard',       label: 'Dashboard',  icon: LayoutDashboard },
@@ -15,7 +18,18 @@ export default function Navbar() {
     { to: '/api',             label: 'Data API',   icon: Activity,        role: 'researcher' },
   ]
 
-  const active = (path) => location.pathname === path
+  const active   = (path) => location.pathname === path
+  const nextRole = user?.role === 'contributor' ? 'researcher' : 'contributor'
+
+  const handleRoleSwitch = async () => {
+    if (switching) return
+    setSwitching(true)
+    try {
+      const { data } = await switchRole(nextRole)
+      updateRole(data.user.role, data.token)
+    } catch { /* silent — badge stays as-is */ }
+    finally { setSwitching(false) }
+  }
 
   if (!isAuthenticated()) return null
 
@@ -56,9 +70,16 @@ export default function Navbar() {
           </div>
           <div className="h-4 w-px bg-edge" />
           <span className="text-xs text-muted font-display">{user?.username}</span>
-          <span className={`badge ${user?.role === 'contributor' ? 'badge-cyan' : 'badge-yellow'}`}>
-            {user?.role}
-          </span>
+          <button
+            onClick={handleRoleSwitch}
+            disabled={switching}
+            title={`Switch to ${nextRole}`}
+            className={`badge gap-1 cursor-pointer transition-opacity hover:opacity-70 disabled:opacity-40
+              ${user?.role === 'contributor' ? 'badge-cyan' : 'badge-yellow'}`}
+          >
+            {switching ? '…' : user?.role}
+            {!switching && <ArrowLeftRight size={10} />}
+          </button>
           <button
             onClick={() => { logout(); navigate('/login') }}
             className="text-muted hover:text-soft transition-colors"
