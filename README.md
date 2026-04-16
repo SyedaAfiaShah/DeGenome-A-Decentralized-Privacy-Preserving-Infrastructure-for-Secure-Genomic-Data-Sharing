@@ -1,201 +1,285 @@
 # DeGenome
-### Decentralized Privacy-Preserving Infrastructure for Secure Genomic Data Sharing and Controlled Computation
+
+**A Decentralized, Privacy-Preserving Infrastructure for Secure Genomic Data Sharing and Controlled Computation**
+
+DeGenome is a full-stack platform that enables genomic data contributors to share their data safely with researchers — without raw sequences ever leaving the contributor's device. Privacy guarantees are enforced by architecture, not policy.
 
 ---
 
-## What is this?
+## The Problem
 
-Genomic data is one of the most valuable resources in modern science. It holds answers to questions about disease, drug response, inheritance, and human biology that researchers are only beginning to understand.
+Genomic data holds enormous scientific value. It can identify disease risk before symptoms appear, guide drug development at the molecular level, accelerate synthetic biology, and enable precision medicine at population scale. Sequencing costs have dropped by a factor of one million since 2001 and data generation is growing faster than ever.
 
-But despite its enormous potential, this data is almost impossible to access.
-
-The reason is not technical. It is personal. Genomic data reveals deeply private information about health risks, ancestry, and family relationships. People and institutions are understandably reluctant to share it. Hospitals sit on millions of clinical genomic sequences. Biotech companies hold proprietary datasets. Agricultural firms have genomic databases covering every crop variety they have ever developed. None of it reaches the research community, because the current systems give data holders every reason to lock it away and no safe way to share it.
-
-DeGenome is built to change that.
-
-[See live demo](https://degenome.vercel.app/)
+Yet access remains severely restricted. Hospitals hold patient sequences behind regulatory walls. Biotech companies treat genomic databases as proprietary assets. Research institutions silo data behind access committees. The barrier is not technical — it is the absence of a system that makes sharing safe, fair, and worth doing for the people who hold the data.
 
 ---
 
-## The core idea
+## How It Works
 
-DeGenome allows contributors to share genomic data and researchers to use it for scientific analysis, without raw sequences ever being exposed to anyone.
+DeGenome separates two concerns that were previously coupled: **sharing access to genomic insights** and **exposing raw genomic sequences**. Contributors can participate in the former without ever doing the latter.
 
-Instead of sharing raw files, the system transforms genomic data into statistical feature vectors at the source. These features are scientifically useful but cannot be reverse-engineered back into the original sequence. Only these derived features ever leave the contributor's environment. The raw data never moves.
-
-This is not a policy guarantee. It is an architectural one.
-
----
-
-## Why decentralized?
-
-Centralized cloud providers (AWS, Google, Azure) place your data under third-party custody. The platform operator makes decisions about who can access it, under what legal conditions, and for what purposes. Recent years have shown what this means in practice: AI companies training models on user data without meaningful consent, cloud providers entering government and military contracts their users had no say in.
-
-For genomic data, this level of trust in a third party is not acceptable.
-
-DeGenome stores encrypted data on IPFS, a decentralized storage network where no single entity controls the data. The roadmap moves this to Filecoin, a fully decentralized storage layer with no single operator that can be pressured, subpoenaed, or compromised. Self-custody enforced by cryptography, not by a contract.
-
----
-
-## Who is this for?
-
-DeGenome is not a human genomics platform. It is infrastructure for any genomic dataset from any organism.
-
-The system works identically for human clinical data, agricultural crop genomes, microbial sequences, animal genetics, and environmental samples. FASTA and VCF are universal standards across biology. Any field that runs on sequence data and currently faces data access barriers is a target use case.
-
-Fields that stand to benefit directly:
-
-- Clinical genomics: patient-derived sequences tied to disease outcomes, currently locked in hospital systems behind regulatory walls
-- Synthetic biology: engineers working on metabolic pathways need multi-species reference genomes scattered across inaccessible private databases
-- Agricultural genomics: crop and livestock companies hold proprietary genomic data they will not share because of commercial sensitivity
-- Conservation biology: rare species genomic data collected over decades, with no safe path to the research community
-- Microbial research: environmental and pathogen genomic data held in fragmented institutional repositories
-
-The long-term vision is a privacy-preserving equivalent of NCBI, covering the genomic data that existing public repositories cannot host because it is too sensitive, too proprietary, or too regulated.
-
----
-
-## How it works
+### Privacy Pipeline
 
 ```
-Contributor (Browser)
-  ├── Genomic file loaded locally — never leaves the device raw
-  ├── Feature extraction pipeline runs in browser
-  ├── Differential privacy noise applied (Laplace, e=1.0)
-  ├── AES-256-GCM encrypts raw file (Web Crypto API)
-  └── Only feature vector + encrypted blob sent to server
+Contributor's Browser
+│
+├── 1. File selected (FASTA or VCF) — stays in browser memory
+│
+├── 2. JS Feature Extraction — pure JavaScript, zero server involvement
+│       FASTA: nucleotide counts, GC content, Shannon entropy, k-mers (k=2, k=3), sequence length
+│       VCF:   SNP/indel counts, Ts/Tv ratio, het/hom ratio, allele freq stats, per-chromosome counts
+│
+├── 3. Differential Privacy — Laplace noise applied in browser
+│       Formal epsilon-DP guarantee. Default ε = 1.0
+│       Raw features never transmitted — only noised vectors leave the device
+│
+├── 4. AES-256-GCM Encryption — raw file encrypted client-side
+│       Key never transmitted. No server-side key infrastructure exists.
+│
+└── 5. Direct Storj Upload — browser PUT to presigned URL
+        Server generates the URL but never handles file content
+        Encrypted data distributed across thousands of independent global nodes
 
-Backend (FastAPI)
-  ├── Stores differentially private feature vectors in DB
-  ├── Pins encrypted blob to IPFS via Pinata
-  ├── Pins tamper-resistant metadata JSON to IPFS
-  └── Serves feature API endpoints (never raw data)
+Server receives:  differentially private feature vectors, dataset metadata, Storj object key reference
+Server never sees: raw genomic sequences, AES encryption keys, any data capable of reconstructing the sequence
+```
 
-Researcher
-  ├── Browses datasets by feature schema
-  ├── Requests access — contributor approves or rejects
-  ├── Queries /get_features or /get_batch_data
-  ├── Spends credits per API call
-  └── Receives sparse or aligned feature vectors only
+### Research Access
+
+Researchers browse available datasets by feature schema, request access with a stated purpose, and receive approval from the contributor. Approved researchers query feature vectors via REST API or persistent API keys, integrating directly into Python ML pipelines. Credits flow automatically from researcher to contributor per query.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Backend | Python 3.11, FastAPI, SQLAlchemy, bcrypt, JWT, API Keys |
+| Frontend | React 18, Vite, Tailwind CSS, Zustand, Web Crypto API |
+| Privacy | Laplace Differential Privacy (client-side JS) |
+| Encryption | AES-256-GCM (Web Crypto API, client-side) |
+| Storage | Storj (S3-compatible, decentralized, erasure coded) |
+| Metadata | IPFS via Pinata (tamper-resistant provenance records) |
+| Deployment | Render (backend), Vercel (frontend) |
+
+---
+
+## Features
+
+### Core Privacy Architecture
+- **Client-side feature extraction** — JavaScript pipeline runs entirely in the browser. Supports FASTA (nucleotide counts, GC content, AT content, Shannon entropy, sequence length, k=2 and k=3 k-mer frequencies, N ratio) and VCF (SNP count, indel count, Ts/Tv ratio, het/hom ratio, allele frequency statistics, per-chromosome variant counts). Dynamic schema-aware — generates a dataset-specific feature schema from actual file content.
+- **Client-side differential privacy** — Laplace noise calibrated per feature type using a sensitivity map. Type-appropriate clipping: ratio and k-mer values clipped to [0,1], count values clipped to ≥ 0. Configurable epsilon per dataset.
+- **Client-side AES-256-GCM encryption** — Web Crypto API. The AES key is generated and held in the browser. Never transmitted. The server cannot decrypt files even under compulsion.
+- **Direct Storj upload** — Presigned PUT URLs allow the browser to upload encrypted files directly to Storj. The server generates the URL and stores the object key reference but never touches file content.
+- **Decentralized storage** — Storj distributes encrypted file chunks across thousands of independent nodes globally with erasure coding. A compromised node holds only an encrypted fragment that is individually meaningless.
+- **IPFS metadata pinning** — Dataset metadata JSON is pinned to IPFS via Pinata, creating a tamper-resistant and independently verifiable provenance record for every dataset.
+
+### Platform Features
+- **Role-based access** — Users register as contributor or researcher. Role switching is available post-signup without logging out.
+- **Contributor workflow** — Upload FASTA or VCF files, set epsilon privacy budget, approve or reject researcher access requests with time-limited permissions, earn credits per query.
+- **Researcher workflow** — Browse datasets by feature schema, send access requests with stated purpose, query approved datasets via structured JSON query API or natural language interface, spend credits per call.
+- **Structured query system** — POST /data/query accepts feature_type (SNP/kmer/nucleotide), chromosome, position range, and arbitrary filters. Returns matching feature data from the dataset's privacy-protected vector.
+- **API key authentication** — Generate named persistent API keys for programmatic access. Auth middleware accepts either JWT Bearer tokens or API keys, enabling direct integration into Python ML pipelines without browser-based authentication.
+- **Credit system** — Researchers spend 1 credit per query. Credits transfer automatically to the dataset owner. Signup bonus provided on account creation.
+- **Query logging** — All feature queries are logged with timestamp, researcher identity, and dataset reference.
+
+---
+
+## Project Structure
+
+```
+degenome/
+├── backend/
+│   ├── main.py                     # FastAPI app entry point
+│   ├── requirements.txt
+│   ├── render.yaml                 # Render deployment config
+│   ├── .env.example                # Environment variable template
+│   ├── models/
+│   │   ├── db.py                   # SQLAlchemy models (User, Dataset, AccessRequest, ApiKey)
+│   │   └── database.py             # DB session and engine
+│   ├── routers/
+│   │   ├── auth.py                 # Register, login, role switch, API key management
+│   │   ├── datasets.py             # Presign upload URL, register dataset, list datasets
+│   │   ├── data.py                 # Feature queries, batch data, dataset info
+│   │   └── access.py               # Access request creation, approval, listing
+│   └── services/
+│       ├── auth.py                 # JWT creation, password hashing, auth middleware
+│       ├── credits.py              # Credit deduction and transfer logic
+│       ├── ipfs.py                 # IPFS metadata pinning via Pinata
+│       └── storj.py                # Storj presigned URL generation via boto3
+│
+└── frontend/
+    └── src/
+        ├── pages/
+        │   ├── Upload.jsx          # 4-step upload: select → extracting → uploading → done
+        │   ├── Dashboard.jsx       # User stats, dataset list, API key management
+        │   ├── Explorer.jsx        # Browse all available datasets
+        │   ├── DataAPI.jsx         # Query builder and feature access
+        │   ├── AccessRequests.jsx  # Incoming and outgoing access requests
+        │   ├── Auth.jsx            # Login and registration
+        │   └── Landing.jsx
+        ├── components/
+        │   ├── Navbar.jsx          # Navigation with role switcher
+        │   ├── QueryBuilder.jsx    # Visual query builder for researchers
+        │   ├── FeatureViewer.jsx   # Feature vector display
+        │   └── DatasetCard.jsx
+        ├── utils/
+        │   ├── featureExtraction.js  # Client-side FASTA/VCF feature extraction (36/36 tests)
+        │   └── privacy.js            # Client-side Laplace differential privacy (40/40 tests)
+        ├── services/
+        │   └── api.js              # Axios API client
+        └── store/
+            └── authStore.js        # Zustand auth state
 ```
 
 ---
 
-## Privacy design
-
-**What the server never sees:**
-- Raw genomic sequences
-- Plaintext AES keys
-- Any data that could reconstruct the original sequence
-
-**What the server stores:**
-- Differentially private feature vectors (Laplace mechanism, e=1.0 default)
-- AES-256 encrypted raw data CID (a pointer to IPFS storage, not the data itself)
-- RSA-wrapped AES key (encrypted, unusable without the private key)
-- Dataset metadata and feature schemas
-
-**Differential privacy:** Adding calibrated mathematical noise to feature values before storage provides a formal, provable bound on how much information any feature can leak about the original sequence. This is the same standard used by Apple, Google, and the US Census Bureau for protecting aggregate statistical data.
-
-**Known v1 limitations:**
-- Feature extraction currently runs server-side (PoC). Production roadmap moves this fully client-side via WebAssembly so raw data never crosses the network at all
-- Server holds the RSA private key. Full zero-trust requires threshold key management (roadmap item)
-- Storage uses Pinata (centralized IPFS pinning). Filecoin migration is the next infrastructure step
-
----
-
-## Incentive model
-
-Contributors earn credits every time a researcher queries their dataset. Researchers spend credits per API call. New accounts receive a signup bonus to get started.
-
-The roadmap moves this on-chain with a smart contract token economy, inspired by DAO incentive structures. Token value is backed by platform revenue. Contributors can exchange tokens for real value as the platform grows. On-chain identity means contributors are identified by wallet addresses rather than personal information, providing pseudonymity by default for people sharing sensitive biological data.
-
-| Event | Effect |
-|-------|--------|
-| New account | +10 credits |
-| /data/features call | -1 CR (researcher), +1 CR (contributor) |
-| /data/batch call | -2 CR (researcher), +2 CR (contributor) |
-| /data/schema or /data/info | Free |
-
----
-
-## Supported formats (v1)
-
-| Format | Extension | Features extracted |
-|--------|-----------|--------------------|
-| FASTA | `.fasta`, `.fa` | Nucleotide counts, GC content, Shannon entropy, k-mer frequencies (k=2, k=3) |
-| VCF | `.vcf` | Variant counts, SNP/indel ratio, Ts/Tv ratio, zygosity, allele frequency stats, per-chromosome counts |
-
----
-
-## Local setup
+## Getting Started
 
 ### Prerequisites
+
 - Python 3.11+
 - Node.js 18+
-- A [Pinata](https://pinata.cloud) account (free tier works)
+- A [Storj](https://storj.io) account with S3 credentials and a bucket
+- A [Pinata](https://pinata.cloud) account with API keys
 
-### Backend
+### Backend Setup
+
 ```bash
 cd backend
+python -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env
-# Add your Pinata keys and JWT_SECRET to .env
-python scripts/gen_keys.py
+```
+
+Copy `.env.example` to `.env` and fill in your credentials:
+
+```env
+JWT_SECRET=your-secret-key-here
+DATABASE_URL=sqlite:///./degenome.db
+ENVIRONMENT=development
+
+PINATA_API_KEY=your-pinata-api-key
+PINATA_SECRET_API_KEY=your-pinata-secret-key
+
+STORJ_ENDPOINT=https://gateway.storjshare.io
+STORJ_ACCESS_KEY=your-storj-access-key
+STORJ_SECRET_KEY=your-storj-secret-key
+STORJ_BUCKET=degenome
+```
+
+Start the development server:
+
+```bash
 uvicorn main:app --reload --port 8000
 ```
 
-### Frontend
+API documentation available at `http://localhost:8000/docs`
+
+### Frontend Setup
+
 ```bash
 cd frontend
 npm install
-cp .env.example .env
-# VITE_API_URL=http://localhost:8000
+```
+
+Create `frontend/.env`:
+
+```env
+VITE_API_URL=http://localhost:8000
+```
+
+Start the development server:
+
+```bash
 npm run dev
 ```
 
 ---
 
-## API reference
+## Deployment
 
-All endpoints except `/auth/*` require `Authorization: Bearer <token>`.
+### Backend — Render
 
-| Method | Endpoint | Cost | Description |
-|--------|----------|------|-------------|
-| POST | `/auth/register` | free | Create account |
-| POST | `/auth/login` | free | Get JWT token |
-| POST | `/datasets/upload` | free | Upload and extract features |
-| GET | `/datasets/` | free | List all datasets |
-| GET | `/data/info` | free | Dataset metadata |
-| GET | `/data/schema` | free | Full feature schema |
-| GET | `/data/features` | 1 CR | Sparse or full feature vector |
-| GET | `/data/batch` | 2 CR | Batch feature vectors |
-| POST | `/access/request` | free | Request dataset access |
-| POST | `/access/decide` | free | Approve or reject a request |
-| GET | `/credits/balance` | free | Credit and earnings balance |
+1. Connect your GitHub repository to Render
+2. Set root directory to `backend`
+3. Set build command to `pip install -r requirements.txt`
+4. Set start command to `uvicorn main:app --host 0.0.0.0 --port $PORT`
+5. Add all environment variables from `.env.example` in the Render Environment tab
+6. Set Python version by adding a `backend/.python-version` file containing `3.11.0`
+
+### Frontend — Vercel
+
+1. Connect your GitHub repository to Vercel
+2. Set root directory to `frontend`
+3. Add `VITE_API_URL` environment variable pointing to your Render backend URL
 
 ---
 
-## Tech stack
+## API Reference
 
-**Backend:** Python, FastAPI, SQLAlchemy, SQLite/PostgreSQL, bcrypt, python-jose
+### Authentication
 
-**Frontend:** React, Vite, Tailwind CSS, Zustand, Axios, Web Crypto API
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | /auth/register | Create account (role: contributor or researcher) |
+| POST | /auth/login | Login and receive JWT |
+| PATCH | /auth/role | Switch role without logging out |
+| POST | /auth/api-keys | Generate a named API key |
+| GET | /auth/api-keys | List existing API keys |
 
-**Storage:** IPFS via Pinata (Filecoin on roadmap)
+### Datasets
 
-**Privacy:** AES-256-GCM, RSA-2048, Laplace differential privacy (e-DP)
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | /datasets/presign | Get presigned Storj upload URL |
+| POST | /datasets/register | Register dataset after direct Storj upload |
+| GET | /datasets/ | List all available datasets |
+| GET | /datasets/my | List current user's datasets |
 
-**Deployment:** Render (backend), Vercel (frontend)
+### Data Access
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | /data/features | Get feature vector for approved dataset |
+| POST | /data/query | Structured query on feature vector |
+| GET | /data/info | Dataset metadata and schema |
+| POST | /data/batch | Batch feature retrieval |
+
+### Access Control
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | /access/request | Request access to a dataset (researcher only) |
+| PATCH | /access/{id}/approve | Approve an access request (contributor only) |
+| PATCH | /access/{id}/reject | Reject an access request (contributor only) |
+| GET | /access/my | List all access requests for current user |
+
+---
+
+## Security Model
+
+Traditional platforms protect data with access controls and legal agreements. If the server is compromised, raw data is exposed. DeGenome removes this attack surface entirely by ensuring the server never holds data worth stealing.
+
+- The privacy guarantee is a mathematical proof, not a policy. Epsilon-differential privacy formally bounds the amount of information an adversary can extract from any released feature value, regardless of how many queries they make.
+- The encryption guarantee does not depend on the server. AES-256-GCM keys are generated in the browser and never transmitted. A complete server compromise reveals nothing about raw genomic content.
+- The storage guarantee does not depend on a single operator. Storj's erasure coding distributes encrypted chunks across thousands of independent nodes. No single node or single company can reconstruct or delete the data.
 
 ---
 
 ## Roadmap
 
-- Client-side feature extraction via WebAssembly
-- Filecoin integration replacing Pinata
-- On-chain token economy with smart contract treasury
-- Threshold RSA key management for true zero-trust
-- Federated learning support (model training without data leaving contributor devices)
-- Consent management layer (per-dataset usage policies)
-- Expanded format support: FASTQ, BED, BAM
-- Blockchain-based contributor identity (wallet address pseudonymity)
+- **On-chain token economy** — Smart contract treasury governs contributor rewards backed by real platform revenue. Token value tied to actual data usage.
+- **Blockchain wallet identity** — Contributors identified by wallet addresses instead of platform accounts, providing pseudonymous identity by default.
+- **Federated learning support** — Researchers train ML models on contributor data without data ever leaving contributor devices.
+- **Expanded format support** — FASTQ, BED, BAM, plus per-dataset consent management allowing contributors to restrict by research purpose or field.
+
+---
+
+## License
+
+MIT License. See LICENSE for details.
+
+---
+
+*DeGenome — Proof of Concept, v1.0*
