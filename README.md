@@ -18,6 +18,8 @@ Yet access remains severely restricted. Hospitals hold patient sequences behind 
 
 DeGenome separates two concerns that were previously coupled: **sharing access to genomic insights** and **exposing raw genomic sequences**. Contributors can participate in the former without ever doing the latter.
 
+[See Degenome v1 - proof of concept here](https://degenome.vercel.app/)
+
 ### Privacy Pipeline
 
 ```
@@ -134,88 +136,6 @@ degenome/
 
 ---
 
-## Getting Started
-
-### Prerequisites
-
-- Python 3.11+
-- Node.js 18+
-- A [Storj](https://storj.io) account with S3 credentials and a bucket
-- A [Pinata](https://pinata.cloud) account with API keys
-
-### Backend Setup
-
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-Copy `.env.example` to `.env` and fill in your credentials:
-
-```env
-JWT_SECRET=your-secret-key-here
-DATABASE_URL=sqlite:///./degenome.db
-ENVIRONMENT=development
-
-PINATA_API_KEY=your-pinata-api-key
-PINATA_SECRET_API_KEY=your-pinata-secret-key
-
-STORJ_ENDPOINT=https://gateway.storjshare.io
-STORJ_ACCESS_KEY=your-storj-access-key
-STORJ_SECRET_KEY=your-storj-secret-key
-STORJ_BUCKET=degenome
-```
-
-Start the development server:
-
-```bash
-uvicorn main:app --reload --port 8000
-```
-
-API documentation available at `http://localhost:8000/docs`
-
-### Frontend Setup
-
-```bash
-cd frontend
-npm install
-```
-
-Create `frontend/.env`:
-
-```env
-VITE_API_URL=http://localhost:8000
-```
-
-Start the development server:
-
-```bash
-npm run dev
-```
-
----
-
-## Deployment
-
-### Backend — Render
-
-1. Connect your GitHub repository to Render
-2. Set root directory to `backend`
-3. Set build command to `pip install -r requirements.txt`
-4. Set start command to `uvicorn main:app --host 0.0.0.0 --port $PORT`
-5. Add all environment variables from `.env.example` in the Render Environment tab
-6. Set Python version by adding a `backend/.python-version` file containing `3.11.0`
-
-### Frontend — Vercel
-
-1. Connect your GitHub repository to Vercel
-2. Set root directory to `frontend`
-3. Add `VITE_API_URL` environment variable pointing to your Render backend URL
-
----
-
 ## API Reference
 
 ### Authentication
@@ -274,12 +194,6 @@ Traditional platforms protect data with access controls and legal agreements. If
 - **Federated learning support** — Researchers train ML models on contributor data without data ever leaving contributor devices.
 - **Expanded format support** — FASTQ, BED, BAM, plus per-dataset consent management allowing contributors to restrict by research purpose or field.
 
+
+*DeGenome - Proof of Concept, v1.0*
 ---
-
-## License
-
-MIT License. See LICENSE for details.
-
----
-
-*DeGenome — Proof of Concept, v1.0*
