@@ -62,6 +62,8 @@ def register_dataset(
     fmt = body.format_type.lower()
     if fmt not in ALLOWED_FORMATS:
         raise HTTPException(400, f"format_type must be one of: {', '.join(ALLOWED_FORMATS)}")
+    if current_user.role != "contributor":
+        raise HTTPException(403, "Only contributors can register datasets")
 
     metadata_json = {
         "owner":           current_user.username,

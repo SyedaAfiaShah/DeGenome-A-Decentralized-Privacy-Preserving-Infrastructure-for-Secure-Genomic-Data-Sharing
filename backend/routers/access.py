@@ -28,6 +28,8 @@ def request_access(
     dataset = db.query(Dataset).filter(Dataset.id == body.dataset_id).first()
     if not dataset:
         raise HTTPException(404, "Dataset not found")
+    if user.role != "researcher":
+        raise HTTPException(403, "Only researchers can request access")
     if dataset.owner_id == user.id:
         raise HTTPException(400, "You own this dataset")
 
@@ -104,6 +106,8 @@ def _fmt(r: AccessRequest, db: Session) -> dict:
         "dataset_id":    r.dataset_id,
         "dataset_title": dataset.title if dataset else "Unknown",
         "requester":     requester.username if requester else "Unknown",
+        "owner_id":      dataset.owner_id if dataset else None,
+        "requester_id":  r.requester_id,
         "purpose":       r.purpose,
         "status":        r.status,
         "expires_at":    r.expires_at.isoformat() if r.expires_at else None,

@@ -10,15 +10,22 @@ const statusBadge = s => ({
 }[s] || <span className="badge-muted badge">{s}</span>)
 
 export default function AccessRequests() {
-  const { isContributor } = useAuthStore()
+  const user = useAuthStore(state => state.user)
+  const isContributor = useAuthStore(state => state.isContributor)
   const [incoming, setIncoming] = useState([])
   const [outgoing, setOutgoing] = useState([])
   const [tab,      setTab]      = useState(isContributor() ? 'incoming' : 'outgoing')
   const [busy,     setBusy]     = useState({})
 
   const load = () => {
-    incomingRequests().then(r => setIncoming(r.data)).catch(() => {})
-    outgoingRequests().then(r => setOutgoing(r.data)).catch(() => {})
+    Promise.all([incomingRequests(), outgoingRequests()])
+      .then(([inRes, outRes]) => {
+        const allReqs = [...inRes.data, ...outRes.data]
+        const unique = Array.from(new Map(allReqs.map(r => [r.request_id, r])).values())
+        setIncoming(unique.filter(req => req.owner_id === user?.id))
+        setOutgoing(unique.filter(req => req.requester_id === user?.id))
+      })
+      .catch(() => {})
   }
 
   useEffect(load, [])

@@ -5,7 +5,10 @@ import { switchRole } from '../services/api'
 import { Dna, LogOut, LayoutDashboard, Upload, Database, Bell, Activity, ArrowLeftRight } from 'lucide-react'
 
 export default function Navbar() {
-  const { user, logout, isAuthenticated, updateRole } = useAuthStore()
+  const user = useAuthStore(state => state.user)
+  const logout = useAuthStore(state => state.logout)
+  const isAuthenticated = useAuthStore(state => state.isAuthenticated)
+  const updateRole = useAuthStore(state => state.updateRole)
   const navigate    = useNavigate()
   const location    = useLocation()
   const [switching, setSwitching] = useState(false)
