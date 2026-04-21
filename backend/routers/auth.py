@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from models.database import get_db
-from models.db import User, ApiKey
-from services.auth import hash_password, verify_password, create_token, get_current_user, generate_api_key
+from models.db import User, ApiKey, Dataset
+from services.auth import hash_password, verify_password, create_token, get_current_user
 from services.credits import award_signup_bonus
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -24,9 +24,6 @@ class LoginIn(BaseModel):
 
 class RoleIn(BaseModel):
     role: str
-
-class ApiKeyIn(BaseModel):
-    name: str
 
 
 @router.post("/register")
@@ -88,43 +85,12 @@ def switch_role(
     }
 
 
-@router.post("/api-keys", status_code=201)
-def create_api_key(
-    body:         ApiKeyIn,
+@router.get("/my-keys")
+def list_my_keys(
     current_user: User    = Depends(get_current_user),
     db:           Session = Depends(get_db),
 ):
-    """
-    Generate a new API key for the authenticated user.
-    The raw key is returned once — it is never stored and cannot be recovered.
-    """
-    if not body.name.strip():
-        raise HTTPException(400, "Key name cannot be blank")
-    raw_key, key_hash, key_prefix = generate_api_key()
-    api_key = ApiKey(
-        user_id    = current_user.id,
-        key_hash   = key_hash,
-        key_prefix = key_prefix,
-        name       = body.name.strip(),
-    )
-    db.add(api_key)
-    db.commit()
-    db.refresh(api_key)
-    return {
-        "id":         api_key.id,
-        "name":       api_key.name,
-        "key_prefix": api_key.key_prefix,
-        "key":        raw_key,           # shown once — client must save it
-        "created_at": api_key.created_at.isoformat(),
-    }
-
-
-@router.get("/api-keys")
-def list_api_keys(
-    current_user: User    = Depends(get_current_user),
-    db:           Session = Depends(get_db),
-):
-    """List all active API keys for the authenticated user (no raw key values)."""
+    """List all active API keys for the authenticated user, including dataset info."""
     keys = (
         db.query(ApiKey)
         .filter(ApiKey.user_id == current_user.id, ApiKey.is_active == True)
@@ -133,11 +99,39 @@ def list_api_keys(
     )
     return [
         {
-            "id":           k.id,
-            "name":         k.name,
-            "key_prefix":   k.key_prefix,
-            "created_at":   k.created_at.isoformat(),
-            "last_used_at": k.last_used_at.isoformat() if k.last_used_at else None,
+            "id":            k.id,
+            "name":          k.name,
+            "key_prefix":    k.key_prefix,
+            "dataset_id":    k.dataset_id,
+            "dataset_title": k.dataset.title if k.dataset else None,
+            "access_type":   k.access_type,
+            "created_at":    k.created_at.isoformat(),
+            "last_used_at":  k.last_used_at.isoformat() if k.last_used_at else None,
         }
         for k in keys
     ]
+
+
+@router.delete("/api-keys/{key_id}")
+def revoke_api_key(
+    key_id:       str,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """
+    Revoke an API key. Only the dataset OWNER (contributor) may revoke keys
+    scoped to their dataset — not the key holder themselves.
+    """
+    api_key = db.query(ApiKey).filter(ApiKey.id == key_id, ApiKey.is_active == True).first()
+    if not api_key:
+        raise HTTPException(404, "API key not found or already revoked")
+
+    dataset = db.query(Dataset).filter(Dataset.id == api_key.dataset_id).first()
+    if not dataset:
+        raise HTTPException(404, "Dataset not found")
+    if dataset.owner_id != current_user.id:
+        raise HTTPException(403, "Only the dataset owner can revoke this key")
+
+    api_key.is_active = False
+    db.commit()
+    return {"message": "Key revoked"}

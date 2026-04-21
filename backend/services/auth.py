@@ -3,6 +3,7 @@ import hashlib
 import secrets
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
+from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
@@ -83,6 +84,36 @@ def get_current_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
+
+
+def get_auth_context(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer),
+    db: Session = Depends(get_db),
+) -> tuple[User, Optional[ApiKey]]:
+    """Returns (user, api_key) — api_key is None when auth was via JWT."""
+    token = credentials.credentials
+
+    if token.startswith("dg_"):
+        key_hash = hash_api_key(token)
+        api_key  = db.query(ApiKey).filter(
+            ApiKey.key_hash  == key_hash,
+            ApiKey.is_active == True,
+        ).first()
+        if not api_key:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail="Invalid or revoked API key")
+        api_key.last_used_at = datetime.utcnow()
+        db.commit()
+        user = db.query(User).filter(User.id == api_key.user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        return user, api_key
+    else:
+        payload = decode_token(token)
+        user    = db.query(User).filter(User.id == payload["sub"]).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        return user, None
 
 
 def require_role(role: str):

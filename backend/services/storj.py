@@ -93,3 +93,44 @@ def generate_presigned_upload_url(filename: str, format_type: str) -> dict:
         "object_key": object_key,
         "expires_in": _URL_EXPIRY,
     }
+
+
+def generate_presigned_download_url(object_key: str) -> dict:
+    """
+    Generate a presigned S3 GET URL for downloading a raw genomic file from Storj.
+
+    Args:
+        object_key: The Storj object key stored on the Dataset row (storj_key).
+
+    Returns:
+        {
+            "url":        "<presigned GET URL, valid 15 min>",
+            "object_key": "<object key>",
+            "expires_in": 900,
+        }
+
+    Raises:
+        RuntimeError: if Storj credentials are not configured.
+    """
+    if not all([_ENDPOINT, _ACCESS_KEY, _SECRET_KEY, _BUCKET]):
+        raise RuntimeError(
+            "Storj credentials not configured. "
+            "Set STORJ_ENDPOINT, STORJ_ACCESS_KEY, STORJ_SECRET_KEY, "
+            "and STORJ_BUCKET in your environment."
+        )
+
+    url = _s3_client().generate_presigned_url(
+        ClientMethod="get_object",
+        Params={
+            "Bucket": _BUCKET,
+            "Key":    object_key,
+        },
+        ExpiresIn=_URL_EXPIRY,
+        HttpMethod="GET",
+    )
+
+    return {
+        "url":        url,
+        "object_key": object_key,
+        "expires_in": _URL_EXPIRY,
+    }

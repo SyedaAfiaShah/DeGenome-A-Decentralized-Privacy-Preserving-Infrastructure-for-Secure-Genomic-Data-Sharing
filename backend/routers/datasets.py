@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Any
+from typing import Any, Optional
 from models.database import get_db
 from models.db import Dataset, User
 from services.auth import get_current_user
+from services.credits import award_dataset_registration
 from services.ipfs import pin_json
 from services.storj import generate_presigned_upload_url
 import json
@@ -18,7 +19,7 @@ class RegisterIn(BaseModel):
     title:           str
     description:     str
     format_type:     str
-    object_key:      str          # Storj object key returned by /presign
+    object_key:      Optional[str] = None   # Storj object key; None for features-only upload
     epsilon:         float
     feature_vector:  dict[str, float]
     feature_schema:  list[str]
@@ -82,6 +83,8 @@ def register_dataset(
     except Exception as e:
         raise HTTPException(502, f"IPFS pin failed: {e}")
 
+    has_raw_file = bool(body.object_key)
+
     dataset = Dataset(
         owner_id        = current_user.id,
         title           = body.title,
@@ -94,16 +97,20 @@ def register_dataset(
         feature_vector  = body.feature_vector,
         sample_count    = 1,
         regions         = body.regions,
+        has_raw_file    = has_raw_file,
     )
     db.add(dataset)
     db.commit()
     db.refresh(dataset)
+
+    award_dataset_registration(dataset, db)
 
     return {
         "dataset_id":      dataset.id,
         "metadata_cid":    metadata_cid,
         "active_features": body.active_features,
         "feature_count":   len(body.active_features),
+        "has_raw_file":    has_raw_file,
         "epsilon":         body.epsilon,
     }
 

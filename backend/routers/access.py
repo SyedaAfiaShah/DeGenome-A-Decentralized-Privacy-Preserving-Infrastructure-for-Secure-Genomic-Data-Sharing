@@ -2,16 +2,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from models.database import get_db
-from models.db import AccessRequest, Dataset, User
-from services.auth import get_current_user
+from models.db import AccessRequest, Dataset, User, ApiKey
+from services.auth import get_current_user, generate_api_key
 from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/access", tags=["access"])
 
 
 class RequestIn(BaseModel):
-    dataset_id: str
-    purpose:    str
+    dataset_id:  str
+    purpose:     str
+    access_type: str = "feature_access"   # feature_access | raw_file_access
 
 class DecisionIn(BaseModel):
     request_id: str
@@ -25,6 +26,9 @@ def request_access(
     db:   Session = Depends(get_db),
     user: User    = Depends(get_current_user),
 ):
+    if body.access_type not in ("feature_access", "raw_file_access"):
+        raise HTTPException(400, "access_type must be feature_access or raw_file_access")
+
     dataset = db.query(Dataset).filter(Dataset.id == body.dataset_id).first()
     if not dataset:
         raise HTTPException(404, "Dataset not found")
@@ -32,10 +36,13 @@ def request_access(
         raise HTTPException(403, "Only researchers can request access")
     if dataset.owner_id == user.id:
         raise HTTPException(400, "You own this dataset")
+    if body.access_type == "raw_file_access" and not dataset.has_raw_file:
+        raise HTTPException(400, "This dataset has no raw file available")
 
     existing = db.query(AccessRequest).filter(
         AccessRequest.requester_id == user.id,
         AccessRequest.dataset_id   == body.dataset_id,
+        AccessRequest.access_type  == body.access_type,
         AccessRequest.status       == "pending",
     ).first()
     if existing:
@@ -45,11 +52,12 @@ def request_access(
         requester_id=user.id,
         dataset_id=body.dataset_id,
         purpose=body.purpose,
+        access_type=body.access_type,
     )
     db.add(req)
     db.commit()
     db.refresh(req)
-    return {"request_id": req.id, "status": req.status}
+    return {"request_id": req.id, "status": req.status, "access_type": req.access_type}
 
 
 @router.post("/decide")
@@ -70,11 +78,36 @@ def decide_request(
 
     req.status     = body.decision
     req.updated_at = datetime.utcnow()
+
+    api_key_response = None
     if body.decision == "approved":
         req.expires_at = datetime.utcnow() + timedelta(days=body.days_valid)
 
+        # Auto-generate a scoped API key for the requester
+        raw_key, key_hash, key_prefix = generate_api_key()
+        api_key = ApiKey(
+            user_id     = req.requester_id,
+            dataset_id  = req.dataset_id,
+            access_type = req.access_type,
+            key_hash    = key_hash,
+            key_prefix  = key_prefix,
+            name        = f"{dataset.title} - {req.access_type}",
+        )
+        db.add(api_key)
+        db.flush()                          # populate api_key.id before commit
+        req.approved_key_id = api_key.id
+        api_key_response = {"api_key": raw_key, "key_prefix": key_prefix}
+
     db.commit()
-    return {"request_id": req.id, "status": req.status, "expires_at": req.expires_at}
+
+    result = {
+        "request_id": req.id,
+        "status":     req.status,
+        "expires_at": req.expires_at.isoformat() if req.expires_at else None,
+    }
+    if api_key_response:
+        result.update(api_key_response)
+    return result
 
 
 @router.get("/incoming")
@@ -99,7 +132,7 @@ def outgoing_requests(
 
 
 def _fmt(r: AccessRequest, db: Session) -> dict:
-    dataset  = db.query(Dataset).filter(Dataset.id == r.dataset_id).first()
+    dataset   = db.query(Dataset).filter(Dataset.id == r.dataset_id).first()
     requester = db.query(User).filter(User.id == r.requester_id).first()
     return {
         "request_id":    r.id,
@@ -109,6 +142,7 @@ def _fmt(r: AccessRequest, db: Session) -> dict:
         "owner_id":      dataset.owner_id if dataset else None,
         "requester_id":  r.requester_id,
         "purpose":       r.purpose,
+        "access_type":   r.access_type,
         "status":        r.status,
         "expires_at":    r.expires_at.isoformat() if r.expires_at else None,
         "created_at":    r.created_at.isoformat(),

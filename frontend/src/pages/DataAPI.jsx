@@ -1,236 +1,215 @@
 import { useState, useEffect } from 'react'
-import { listDatasets, getFeatureSchema, getFeatures, getBatchData, queryFeatures } from '../services/api'
-import FeatureViewer from '../components/FeatureViewer'
-import QueryBuilder from '../components/QueryBuilder'
+import { Link } from 'react-router-dom'
+import { getMyKeys } from '../services/api'
 import useAuthStore from '../store/authStore'
-import { Play, ChevronDown, AlertCircle, Zap } from 'lucide-react'
+import { Key, Copy, Check, Database, Code } from 'lucide-react'
 
-const ENDPOINTS = [
-  { key: 'get_features',   label: 'get_features',      cost: 1, desc: 'Single feature vector for a dataset' },
-  { key: 'get_batch',      label: 'get_batch_data',    cost: 2, desc: 'Batch of feature vectors' },
-  { key: 'get_schema',     label: 'get_feature_schema',cost: 0, desc: 'Full feature schema (free)' },
-  { key: 'query_features', label: 'query_features',    cost: 1, desc: 'Filter features by type, chromosome, or value range' },
-]
+const BACKEND = 'https://degenome.onrender.com'
+
+const accessTypeBadge = t => t === 'raw_file_access'
+  ? <span className="text-[10px] font-display px-1.5 py-0.5 rounded border border-purple-700/40 bg-purple-900/20 text-purple-300">Raw File</span>
+  : <span className="text-[10px] font-display px-1.5 py-0.5 rounded border border-cyan/30 bg-cyan/10 text-cyan">Feature Access</span>
+
+function featurePythonSnippet(datasetId) {
+  return `import requests
+
+API_KEY = "dg_..."  # your full key from the approval email
+
+response = requests.post(
+    "${BACKEND}/data/query",
+    headers={"Authorization": f"Bearer {API_KEY}"},
+    json={
+        "dataset_id": "${datasetId}",
+        "feature_type": "SNP",
+        "filters": {}
+    }
+)
+print(response.json())`
+}
+
+function rawFilePythonSnippet(datasetId) {
+  return `import requests
+
+API_KEY = "dg_..."  # your full key from the approval email
+
+# Step 1: get a short-lived presigned download URL
+response = requests.get(
+    "${BACKEND}/data/raw-file/${datasetId}",
+    headers={"Authorization": f"Bearer {API_KEY}"}
+)
+download_url = response.json()["url"]
+
+# Step 2: download the raw file from Storj
+file_response = requests.get(download_url)
+with open("genomic_data.vcf", "wb") as f:
+    f.write(file_response.content)`
+}
+
+function curlSnippet(datasetId, accessType) {
+  if (accessType === 'raw_file_access') {
+    return `curl -X GET ${BACKEND}/data/raw-file/${datasetId} \\
+  -H "Authorization: Bearer YOUR_FULL_KEY"`
+  }
+  return `curl -X POST ${BACKEND}/data/query \\
+  -H "Authorization: Bearer YOUR_FULL_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"dataset_id": "${datasetId}", "feature_type": "SNP"}'`
+}
+
+function CodeBlock({ code, keyId, copied, onCopy }) {
+  return (
+    <div className="relative">
+      <pre className="bg-ink/60 border border-edge rounded-lg p-4 text-[11px] font-mono text-soft overflow-x-auto leading-relaxed">
+        {code}
+      </pre>
+      <button
+        onClick={() => onCopy(keyId, code)}
+        className="absolute top-2 right-2 p-1.5 rounded border border-edge bg-ink/80 hover:border-cyan/30 transition-colors">
+        {copied
+          ? <Check size={11} className="text-green-400" />
+          : <Copy size={11} className="text-muted" />}
+      </button>
+    </div>
+  )
+}
 
 export default function DataAPI() {
-  const { user, updateCredits } = useAuthStore()
-  const [datasets,    setDatasets]   = useState([])
-  const [datasetId,   setDatasetId]  = useState('')
-  const [endpoint,    setEndpoint]   = useState('get_features')
-  const [sparse,      setSparse]     = useState(true)
-  const [batchSize,   setBatchSize]  = useState(5)
-  const [queryParams, setQueryParams]= useState({ featureType: '', chromosome: '', rangeMin: '', rangeMax: '' })
-  const [result,      setResult]     = useState(null)
-  const [schema,      setSchema]     = useState(null)
-  const [busy,        setBusy]       = useState(false)
-  const [err,         setErr]        = useState('')
+  const { user } = useAuthStore()
+  const [myKeys,     setMyKeys]     = useState([])
+  const [loading,    setLoading]    = useState(true)
+  const [activeTabs, setActiveTabs] = useState({})   // { [keyId]: 'python' | 'curl' }
+  const [copiedCode, setCopiedCode] = useState({})   // { [keyId]: bool }
 
   useEffect(() => {
-    listDatasets().then(r => { setDatasets(r.data); if (r.data.length) setDatasetId(r.data[0].dataset_id) }).catch(() => {})
+    getMyKeys()
+      .then(r => setMyKeys(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }, [])
 
-  const run = async () => {
-    if (!datasetId) return
-    setBusy(true); setErr(''); setResult(null)
-    try {
-      let res
-      if (endpoint === 'get_features') {
-        res = await getFeatures(datasetId, sparse)
-      } else if (endpoint === 'get_batch') {
-        res = await getBatchData(datasetId, batchSize, 0, sparse)
-      } else if (endpoint === 'query_features') {
-        const body = { dataset_id: datasetId }
-        if (queryParams.featureType)        body.feature_type = queryParams.featureType
-        if (queryParams.chromosome.trim())  body.chromosome   = queryParams.chromosome.trim()
-        if (queryParams.rangeMin !== '' && queryParams.rangeMax !== '')
-          body.range = [parseFloat(queryParams.rangeMin), parseFloat(queryParams.rangeMax)]
-        res = await queryFeatures(body)
-      } else {
-        res = await getFeatureSchema(datasetId)
-        setSchema(res.data)
-      }
-      if (res) setResult(res.data)
+  const getTab   = keyId => activeTabs[keyId] || 'python'
+  const setTab   = (keyId, tab) => setActiveTabs(prev => ({ ...prev, [keyId]: tab }))
 
-      // Refresh credits
-      const newCredits = (user?.credits || 0) - (ENDPOINTS.find(e => e.key === endpoint)?.cost || 0)
-      updateCredits(Math.max(0, newCredits), user?.earnings || 0)
-    } catch (e) {
-      setErr(e.response?.data?.detail || 'Request failed. Check access permissions.')
-    } finally { setBusy(false) }
+  const copyCode = (keyId, code) => {
+    navigator.clipboard.writeText(code)
+    setCopiedCode(prev => ({ ...prev, [keyId]: true }))
+    setTimeout(() => setCopiedCode(prev => ({ ...prev, [keyId]: false })), 2000)
   }
-
-  const ep = ENDPOINTS.find(e => e.key === endpoint)
 
   return (
     <div className="page">
-      <h1 className="font-display text-2xl text-soft mb-1">Data API</h1>
-      <p className="text-xs text-muted mb-8">Query genomic feature vectors. Raw data is never returned.</p>
+      <h1 className="font-display text-2xl text-soft mb-1">Data API Access</h1>
+      <p className="text-xs text-muted mb-8">Use your API keys to query datasets programmatically</p>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Query builder */}
-        <div className="space-y-5">
-          <div className="card">
-            <p className="section-title">query builder</p>
-
-            <div className="space-y-4">
-              {/* Dataset */}
-              <div>
-                <label className="label">Dataset</label>
-                <select className="input" value={datasetId} onChange={e => setDatasetId(e.target.value)}>
-                  <option value="">Select a dataset…</option>
-                  {datasets.map(d => (
-                    <option key={d.dataset_id} value={d.dataset_id}>
-                      {d.title} ({d.format_type?.toUpperCase()})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Endpoint */}
-              <div>
-                <label className="label">Endpoint</label>
-                <div className="space-y-2">
-                  {ENDPOINTS.map(e => (
-                    <button key={e.key} type="button" onClick={() => setEndpoint(e.key)}
-                      className={`w-full text-left p-3 rounded-lg border transition-all
-                        ${endpoint === e.key ? 'border-cyan bg-cyan/5' : 'border-edge hover:border-muted'}`}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-mono text-soft">{e.label}</span>
-                        {e.cost > 0
-                          ? <span className="text-[10px] font-display text-red-400">-{e.cost} CR</span>
-                          : <span className="text-[10px] font-display text-green-400">free</span>}
-                      </div>
-                      <p className="text-[10px] text-muted mt-0.5">{e.desc}</p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Query filters */}
-              {endpoint === 'query_features' && (
-                <QueryBuilder params={queryParams} onChange={setQueryParams} />
-              )}
-
-              {/* Options */}
-              {endpoint !== 'get_schema' && endpoint !== 'query_features' && (
-                <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={sparse} onChange={e => setSparse(e.target.checked)}
-                      className="accent-cyan" />
-                    <span className="text-xs text-soft">Sparse (hide zeros)</span>
-                  </label>
-                </div>
-              )}
-
-              {endpoint === 'get_batch' && (
-                <div>
-                  <label className="label">Batch size</label>
-                  <div className="flex items-center gap-3">
-                    <input type="range" min={1} max={50} value={batchSize}
-                      onChange={e => setBatchSize(parseInt(e.target.value))}
-                      className="flex-1 accent-cyan" />
-                    <span className="font-mono text-cyan text-sm w-6">{batchSize}</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Credits indicator */}
-              <div className="flex items-center justify-between py-2 border-t border-edge">
-                <span className="text-xs text-muted">Your balance</span>
-                <span className="text-xs font-display text-cyan">{user?.credits?.toFixed(2)} CR</span>
-              </div>
-
-              {err && (
-                <div className="flex items-center gap-2 text-xs text-red-400 bg-red-900/10 border border-red-900/30 rounded-lg p-3">
-                  <AlertCircle size={13} /> {err}
-                </div>
-              )}
-
-              <button onClick={run} disabled={busy || !datasetId}
-                className="btn-primary w-full justify-center flex items-center gap-2 disabled:opacity-40">
-                <Play size={13} />
-                {busy ? 'Running…' : `Run ${ep?.label}`}
-                {ep?.cost > 0 && !busy && <span className="text-[10px] opacity-70">(-{ep.cost} CR)</span>}
-              </button>
-            </div>
-          </div>
+      {loading ? (
+        <div className="card text-center py-12">
+          <p className="text-xs text-muted">Loading…</p>
         </div>
+      ) : myKeys.length === 0 ? (
+        /* Empty state */
+        <div className="card text-center py-16">
+          <div className="w-12 h-12 rounded-xl bg-edge flex items-center justify-center mx-auto mb-4">
+            <Key size={20} className="text-muted" />
+          </div>
+          <p className="text-sm font-display text-soft mb-2">No active API keys</p>
+          <p className="text-xs text-muted max-w-xs mx-auto">
+            Request access to a dataset from the{' '}
+            <Link to="/explorer" className="text-cyan hover:underline">Explorer</Link>{' '}
+            to get started. Keys are issued automatically when a contributor approves your request.
+          </p>
+        </div>
+      ) : (
+        /* Key cards */
+        <div className="space-y-6">
+          <p className="text-[10px] text-muted font-mono">
+            Replace <code className="text-soft">dg_...</code> with the full key you received on approval.
+            Keys are never stored — if lost, request access again.
+          </p>
 
-        {/* Results */}
-        <div>
-          {result ? (
-            <div className="card">
-              <div className="flex items-center gap-2 mb-4">
-                <Zap size={13} className="text-cyan" />
-                <p className="section-title mb-0">response</p>
-              </div>
+          {myKeys.map(k => {
+            const tab       = getTab(k.id)
+            const copied    = copiedCode[k.id] || false
+            const isRawFile = k.access_type === 'raw_file_access'
+            const tabs      = isRawFile
+              ? [{ key: 'python', label: 'Python' }, { key: 'curl', label: 'curl' }]
+              : [{ key: 'python', label: 'Python' }, { key: 'curl', label: 'curl' }]
 
-              {endpoint === 'get_schema' && result.schema ? (
-                <div>
-                  <div className="flex gap-4 mb-4">
-                    <div className="stat-card flex-1">
-                      <p className="stat-label">total</p>
-                      <p className="text-lg font-display text-soft">{result.total_features}</p>
-                    </div>
-                    <div className="stat-card flex-1">
-                      <p className="stat-label">active</p>
-                      <p className="text-lg font-display text-cyan">{result.active_count}</p>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 max-h-60 overflow-y-auto">
-                    {result.schema.map(f => (
-                      <span key={f.feature}
-                        className={`text-[10px] font-mono px-2 py-0.5 rounded
-                          ${f.active ? 'bg-cyan/10 text-cyan border border-cyan/20' : 'bg-edge text-muted/50'}`}>
-                        {f.feature}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ) : endpoint === 'get_batch' && result.data ? (
-                <div>
-                  <p className="text-xs text-muted mb-3 font-mono">
-                    {result.batch_size} samples · sparse={String(result.sparse)}
-                  </p>
-                  <div className="space-y-4 max-h-96 overflow-y-auto">
-                    {result.data.map((sample, i) => (
-                      <div key={i} className="border border-edge rounded-lg p-3">
-                        <p className="text-[10px] text-muted font-mono mb-2">sample[{i}]</p>
-                        <FeatureViewer features={sample} schema={schema?.schema?.map(f => f.feature) || []} />
+            const code = tab === 'curl'
+              ? curlSnippet(k.dataset_id, k.access_type)
+              : isRawFile
+                ? rawFilePythonSnippet(k.dataset_id)
+                : featurePythonSnippet(k.dataset_id)
+
+            return (
+              <div key={k.id} className="card space-y-4">
+                {/* Card header */}
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <div className="flex items-center gap-1.5">
+                        <Database size={12} className="text-muted" />
+                        <p className="text-sm font-display text-soft">
+                          {k.dataset_title || k.dataset_id?.slice(0, 8) + '…'}
+                        </p>
                       </div>
-                    ))}
+                      {accessTypeBadge(k.access_type)}
+                    </div>
+                    <p className="text-[10px] font-mono text-muted">
+                      Key: {k.key_prefix}… · dataset: {k.dataset_id?.slice(0, 8)}…
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    {k.last_used_at
+                      ? <p className="text-[10px] text-muted">used {new Date(k.last_used_at).toLocaleDateString()}</p>
+                      : <p className="text-[10px] text-muted/50">never used</p>}
+                    <p className="text-[10px] text-muted/50">
+                      issued {new Date(k.created_at).toLocaleDateString()}
+                    </p>
                   </div>
                 </div>
-              ) : endpoint === 'query_features' && result.features ? (
-                <div>
-                  <p className="text-xs text-muted mb-4 font-mono">
-                    {result.matched_count} feature{result.matched_count !== 1 ? 's' : ''} matched
+
+                {/* Access type note */}
+                <div className="rounded-lg bg-ink/40 border border-edge px-3 py-2">
+                  <p className="text-[10px] text-muted">
+                    {isRawFile
+                      ? 'This key grants access to the raw encrypted file on Storj. Cost: 5 credits per download.'
+                      : 'This key grants access to privacy-protected feature vectors. Cost: 1 credit per query.'}
                   </p>
-                  <FeatureViewer
-                    features={result.features}
-                    schema={schema?.schema?.map(f => f.feature) || []}
+                </div>
+
+                {/* Tabs */}
+                <div>
+                  <div className="flex gap-1 mb-3">
+                    {tabs.map(t => (
+                      <button key={t.key} onClick={() => setTab(k.id, t.key)}
+                        className={`flex items-center gap-1.5 text-[10px] font-display px-3 py-1.5 rounded-lg border transition-all
+                          ${tab === t.key ? 'border-cyan text-cyan bg-cyan/10' : 'border-edge text-muted hover:border-muted'}`}>
+                        <Code size={9} />
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <CodeBlock
+                    code={code}
+                    keyId={k.id}
+                    copied={copied}
+                    onCopy={copyCode}
                   />
                 </div>
-              ) : (
-                <FeatureViewer
-                  features={result.features}
-                  schema={schema?.schema?.map(f => f.feature) || []}
-                />
-              )}
-            </div>
-          ) : (
-            <div className="card h-full min-h-48 flex items-center justify-center">
-              <div className="text-center">
-                <div className="w-10 h-10 rounded-xl bg-edge flex items-center justify-center mx-auto mb-3">
-                  <Play size={16} className="text-muted" />
+
+                {/* dataset_id helper */}
+                <div className="flex items-center gap-2 pt-1 border-t border-edge">
+                  <span className="text-[10px] text-muted">dataset_id</span>
+                  <code className="text-[10px] font-mono text-soft bg-ink/40 px-2 py-0.5 rounded border border-edge">
+                    {k.dataset_id}
+                  </code>
                 </div>
-                <p className="text-xs text-muted">Run a query to see results</p>
-                <p className="text-[10px] text-muted mt-1">Only feature vectors are returned — never raw sequences</p>
               </div>
-            </div>
-          )}
+            )
+          })}
         </div>
-      </div>
+      )}
     </div>
   )
 }

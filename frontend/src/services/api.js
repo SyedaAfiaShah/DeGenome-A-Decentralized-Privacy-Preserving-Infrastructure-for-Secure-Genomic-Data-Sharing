@@ -22,11 +22,13 @@ api.interceptors.response.use(
 )
 
 // Auth
-export const register    = d    => api.post('/auth/register', d)
-export const login       = d    => api.post('/auth/login', d)
-export const switchRole  = role => api.patch('/auth/role', { role })
-export const createApiKey= name => api.post('/auth/api-keys', { name })
-export const listApiKeys = ()   => api.get('/auth/api-keys')
+export const register   = d    => api.post('/auth/register', d)
+export const login      = d    => api.post('/auth/login', d)
+export const switchRole = role => api.patch('/auth/role', { role })
+
+// API Keys — auto-issued on approval, not manually created
+export const getMyKeys  = ()       => api.get('/auth/my-keys')
+export const revokeKey  = (keyId)  => api.delete(`/auth/api-keys/${keyId}`)
 
 // Datasets
 export const listDatasets          = (fmt) => api.get('/datasets/', { params: fmt ? { format_type: fmt } : {} })
@@ -35,15 +37,21 @@ export const getPresignedUploadUrl = (filename, format_type) => api.get('/datase
 export const registerDataset       = (body) => api.post('/datasets/register', body)
 
 // Data API
-export const getDatasetInfo  = (id)             => api.get('/data/info',    { params: { dataset_id: id } })
-export const getFeatureSchema= (id)             => api.get('/data/schema',  { params: { dataset_id: id } })
-export const getFeatures     = (id, sparse=true)=> api.get('/data/features',{ params: { dataset_id: id, sparse } })
+export const getDatasetInfo  = (id)              => api.get('/data/info',    { params: { dataset_id: id } })
+export const getFeatureSchema= (id)              => api.get('/data/schema',  { params: { dataset_id: id } })
+export const getFeatures     = (id, sparse=true) => api.get('/data/features',{ params: { dataset_id: id, sparse } })
 export const getBatchData    = (id, size=10, offset=0, sparse=true) =>
   api.get('/data/batch', { params: { dataset_id: id, batch_size: size, offset, sparse } })
-export const queryFeatures   = (body)           => api.post('/data/query', body)
+export const queryFeatures   = (body) => api.post('/data/query', body)
+export const getRawFileUrl   = (datasetId, apiKey = null) => {
+  // If an API key string is provided, use it as the bearer token instead of the stored JWT
+  const config = apiKey ? { headers: { Authorization: `Bearer ${apiKey}` } } : {}
+  return api.get(`/data/raw-file/${datasetId}`, config)
+}
 
 // Access
-export const requestAccess   = (d)  => api.post('/access/request', d)
+export const requestAccess   = (datasetId, purpose, accessType = 'feature_access') =>
+  api.post('/access/request', { dataset_id: datasetId, purpose, access_type: accessType })
 export const decideAccess    = (d)  => api.post('/access/decide', d)
 export const incomingRequests= ()   => api.get('/access/incoming')
 export const outgoingRequests= ()   => api.get('/access/outgoing')

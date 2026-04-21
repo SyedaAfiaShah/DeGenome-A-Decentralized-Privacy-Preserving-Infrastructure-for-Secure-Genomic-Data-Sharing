@@ -40,22 +40,26 @@ class Dataset(Base):
     sample_count     = Column(Integer, default=1)
     regions          = Column(JSON, default=list)           # chromosomes / regions present
     is_active        = Column(Boolean, default=True)
+    has_raw_file     = Column(Boolean, default=False)       # did contributor upload raw file to Storj?
     created_at       = Column(DateTime, default=datetime.utcnow)
 
     owner            = relationship("User", back_populates="datasets")
     access_requests  = relationship("AccessRequest", back_populates="dataset")
+    api_keys         = relationship("ApiKey", back_populates="dataset")
 
 
 class AccessRequest(Base):
     __tablename__ = "access_requests"
-    id            = Column(String, primary_key=True, default=gen_id)
-    requester_id  = Column(String, ForeignKey("users.id"), nullable=False)
-    dataset_id    = Column(String, ForeignKey("datasets.id"), nullable=False)
-    status        = Column(String, default="pending")       # pending | approved | rejected
-    purpose       = Column(Text)
-    expires_at    = Column(DateTime, nullable=True)
-    created_at    = Column(DateTime, default=datetime.utcnow)
-    updated_at    = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    id               = Column(String, primary_key=True, default=gen_id)
+    requester_id     = Column(String, ForeignKey("users.id"), nullable=False)
+    dataset_id       = Column(String, ForeignKey("datasets.id"), nullable=False)
+    status           = Column(String, default="pending")        # pending | approved | rejected
+    access_type      = Column(String, default="feature_access") # feature_access | raw_file_access
+    purpose          = Column(Text)
+    approved_key_id  = Column(String, ForeignKey("api_keys.id", use_alter=True), nullable=True)
+    expires_at       = Column(DateTime, nullable=True)
+    created_at       = Column(DateTime, default=datetime.utcnow)
+    updated_at       = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     requester     = relationship("User", back_populates="access_requests", foreign_keys=[requester_id])
     dataset       = relationship("Dataset", back_populates="access_requests")
@@ -77,6 +81,8 @@ class ApiKey(Base):
     __tablename__ = "api_keys"
     id           = Column(String, primary_key=True, default=gen_id)
     user_id      = Column(String, ForeignKey("users.id"), nullable=False)
+    dataset_id   = Column(String, ForeignKey("datasets.id"), nullable=False)
+    access_type  = Column(String, nullable=False)               # feature_access | raw_file_access
     key_hash     = Column(String, nullable=False, index=True)   # SHA-256 of raw key
     key_prefix   = Column(String, nullable=False)               # first 11 chars for display
     name         = Column(String, nullable=False)
@@ -85,6 +91,7 @@ class ApiKey(Base):
     is_active    = Column(Boolean, default=True)
 
     user         = relationship("User", back_populates="api_keys")
+    dataset      = relationship("Dataset", back_populates="api_keys")
 
 
 class CreditTransaction(Base):

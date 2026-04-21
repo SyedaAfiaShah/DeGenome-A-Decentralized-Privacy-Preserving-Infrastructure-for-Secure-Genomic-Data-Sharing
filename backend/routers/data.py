@@ -3,9 +3,10 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, Any
 from models.database import get_db
-from models.db import Dataset, AccessRequest, User
-from services.auth import get_current_user
+from models.db import Dataset, AccessRequest, User, ApiKey
+from services.auth import get_current_user, get_auth_context
 from services.credits import charge_researcher
+from services.storj import generate_presigned_download_url
 from datetime import datetime
 
 router = APIRouter(prefix="/data", tags=["data"])
@@ -38,7 +39,7 @@ class QueryIn(BaseModel):
 
 
 def _check_access(researcher: User, dataset: Dataset, db: Session):
-    """Verify researcher has approved, non-expired access to dataset."""
+    """Verify researcher has approved, non-expired JWT-based access to dataset."""
     if dataset.owner_id == researcher.id:
         return  # owner always has access
     req = db.query(AccessRequest).filter(
@@ -50,6 +51,18 @@ def _check_access(researcher: User, dataset: Dataset, db: Session):
         raise HTTPException(403, "Access not granted. Request access first.")
     if req.expires_at and req.expires_at < datetime.utcnow():
         raise HTTPException(403, "Access has expired. Request renewal.")
+
+
+def _check_feature_access(user: User, dataset: Dataset, api_key: Optional[ApiKey], db: Session):
+    """Access check for feature endpoints — handles both JWT and API key auth."""
+    if api_key is not None:
+        if api_key.dataset_id != dataset.id:
+            raise HTTPException(403, "API key is not scoped to this dataset")
+        if api_key.access_type == "raw_file_access":
+            raise HTTPException(403, "This API key grants raw file access only, not feature access")
+        # access_type == "feature_access" — access granted via key
+    else:
+        _check_access(user, dataset, db)
 
 
 def _get_dataset_or_404(dataset_id: str, db: Session) -> Dataset:
@@ -75,6 +88,7 @@ def get_dataset_info(
         "sample_count":   d.sample_count,
         "regions":        d.regions,
         "feature_count":  len(d.active_features or []),
+        "has_raw_file":   d.has_raw_file,
         "metadata_cid":   d.metadata_cid,
         "created_at":     d.created_at.isoformat(),
     }
@@ -109,9 +123,9 @@ def get_feature_schema(
 @router.get("/features")
 def get_features(
     dataset_id: str,
-    sparse:     bool = Query(True, description="Return only non-zero features"),
+    sparse:     bool  = Query(True, description="Return only non-zero features"),
     db:         Session = Depends(get_db),
-    user:       User    = Depends(get_current_user),
+    auth:       tuple   = Depends(get_auth_context),
 ):
     """
     Returns feature vector for a dataset.
@@ -119,8 +133,9 @@ def get_features(
     sparse=false: zero-padded full vector aligned to schema (for ML use).
     Credits charged per call.
     """
+    user, api_key = auth
     d = _get_dataset_or_404(dataset_id, db)
-    _check_access(user, d, db)
+    _check_feature_access(user, d, api_key, db)
 
     owner = db.query(User).filter(User.id == d.owner_id).first()
     charge_researcher(user, owner, "get_features", dataset_id, db)
@@ -132,7 +147,6 @@ def get_features(
             "features":   d.feature_vector or {},
         }
     else:
-        # Zero-pad to full schema
         full = {f: 0.0 for f in (d.feature_schema or [])}
         full.update(d.feature_vector or {})
         return {
@@ -149,14 +163,15 @@ def get_batch_data(
     offset:     int  = Query(0, ge=0),
     sparse:     bool = Query(True),
     db:         Session = Depends(get_db),
-    user:       User    = Depends(get_current_user),
+    auth:       tuple   = Depends(get_auth_context),
 ):
     """
     Returns batched feature data. Currently each dataset is one sample;
     in a multi-sample extension this would return rows from the dataset.
     """
+    user, api_key = auth
     d = _get_dataset_or_404(dataset_id, db)
-    _check_access(user, d, db)
+    _check_feature_access(user, d, api_key, db)
 
     owner = db.query(User).filter(User.id == d.owner_id).first()
     charge_researcher(user, owner, "get_batch_data", dataset_id, db)
@@ -167,7 +182,6 @@ def get_batch_data(
         full.update(features)
         features = full
 
-    # Simulate batch: return [batch_size] copies with minor noise (realistic for PoC)
     import random
     batch = []
     for i in range(min(batch_size, d.sample_count)):
@@ -189,12 +203,14 @@ def get_batch_data(
 def query_features(
     body: QueryIn,
     db:   Session = Depends(get_db),
-    user: User    = Depends(get_current_user),
+    auth: tuple   = Depends(get_auth_context),
 ):
     """
     Filtered feature query.  Access-checked and credit-charged like /features.
     Supports filtering by feature type, chromosome, value range, and exact key/value pairs.
     """
+    user, api_key = auth
+
     if body.feature_type and body.feature_type.lower() not in _VALID_FEATURE_TYPES:
         raise HTTPException(400, f"feature_type must be one of: {', '.join(sorted(_VALID_FEATURE_TYPES))}")
 
@@ -202,7 +218,7 @@ def query_features(
         raise HTTPException(400, "range must be an array of exactly two numbers [min, max]")
 
     d = _get_dataset_or_404(body.dataset_id, db)
-    _check_access(user, d, db)
+    _check_feature_access(user, d, api_key, db)
 
     owner = db.query(User).filter(User.id == d.owner_id).first()
     charge_researcher(user, owner, "query_features", body.dataset_id, db)
@@ -251,4 +267,58 @@ def query_features(
             "range":        body.range,
             "filters":      body.filters,
         },
+    }
+
+
+@router.get("/raw-file/{dataset_id}")
+def get_raw_file(
+    dataset_id: str,
+    db:         Session = Depends(get_db),
+    auth:       tuple   = Depends(get_auth_context),
+):
+    """
+    Returns a short-lived presigned GET URL for the raw genomic file on Storj.
+    Requires raw_file_access — either via a scoped API key or an approved
+    raw_file_access AccessRequest (JWT path).
+    Costs 5 credits (deducted from researcher, credited to dataset owner).
+    """
+    user, api_key = auth
+    d = _get_dataset_or_404(dataset_id, db)
+
+    if not d.has_raw_file or not d.storj_key:
+        raise HTTPException(404, "No raw file available for this dataset")
+
+    if api_key is not None:
+        if api_key.dataset_id != dataset_id:
+            raise HTTPException(403, "API key is not scoped to this dataset")
+        if api_key.access_type != "raw_file_access":
+            raise HTTPException(403, "This API key grants feature access only, not raw file access")
+    else:
+        # JWT path: owner can always access; researchers need an approved request
+        if d.owner_id != user.id:
+            req = db.query(AccessRequest).filter(
+                AccessRequest.requester_id == user.id,
+                AccessRequest.dataset_id   == dataset_id,
+                AccessRequest.access_type  == "raw_file_access",
+                AccessRequest.status       == "approved",
+            ).first()
+            if not req:
+                raise HTTPException(403, "Raw file access not granted. Request access first.")
+            if req.expires_at and req.expires_at < datetime.utcnow():
+                raise HTTPException(403, "Raw file access has expired. Request renewal.")
+
+    # Deduct credits (owner accessing own data is free)
+    if d.owner_id != user.id:
+        owner = db.query(User).filter(User.id == d.owner_id).first()
+        charge_researcher(user, owner, "get_raw_file", dataset_id, db)
+
+    try:
+        result = generate_presigned_download_url(d.storj_key)
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+
+    return {
+        "dataset_id": dataset_id,
+        "url":        result["url"],
+        "expires_in": result["expires_in"],
     }

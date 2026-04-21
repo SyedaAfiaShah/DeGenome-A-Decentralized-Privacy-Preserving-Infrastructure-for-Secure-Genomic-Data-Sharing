@@ -1,22 +1,25 @@
 import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Upload as UploadIcon, FileText, Shield, CheckCircle, AlertCircle, Lock } from 'lucide-react'
+import { Upload as UploadIcon, FileText, Shield, CheckCircle, AlertCircle, Lock, HardDrive, Database } from 'lucide-react'
 import { getPresignedUploadUrl, registerDataset } from '../services/api'
 import { extractFeatures, buildFullSchema } from '../utils/featureExtraction'
 import { addLaplaceNoise, stripZeros } from '../utils/privacy'
 
-const STEPS = ['select', 'extracting', 'uploading', 'done']
+// select → extracting → storageOptions → uploading → done
+const STEPS = ['select', 'extracting', 'storageOptions', 'uploading', 'done']
 
 export default function Upload() {
-  const [file,    setFile]   = useState(null)
-  const [title,   setTitle]  = useState('')
-  const [desc,    setDesc]   = useState('')
-  const [epsilon, setEpsilon]= useState(1.0)
-  const [step,    setStep]   = useState('select')
-  const [result,  setResult] = useState(null)
-  const [err,     setErr]    = useState('')
-  const inputRef             = useRef()
-  const navigate             = useNavigate()
+  const [file,          setFile]          = useState(null)
+  const [title,         setTitle]         = useState('')
+  const [desc,          setDesc]          = useState('')
+  const [epsilon,       setEpsilon]       = useState(1.0)
+  const [step,          setStep]          = useState('select')
+  const [storageOption, setStorageOption] = useState('features_only')  // features_only | raw_file
+  const [extracted,     setExtracted]     = useState(null)             // { sparse, schema }
+  const [result,        setResult]        = useState(null)
+  const [err,           setErr]           = useState('')
+  const inputRef  = useRef()
+  const navigate  = useNavigate()
 
   const fmt = file ? (file.name.endsWith('.vcf') ? 'vcf' : 'fasta') : null
 
@@ -31,50 +34,162 @@ export default function Upload() {
     if (!title) setTitle(f.name.replace(/\.[^.]+$/, ''))
   }
 
+  // Phase 1: local extraction only — no network
   const submit = async e => {
     e.preventDefault()
     if (!file || !title.trim()) return
     setErr('')
-
     try {
-      // Step 2: local feature extraction — no network calls
       setStep('extracting')
       const content = await file.text()
       const raw     = extractFeatures(content, fmt)
       const noised  = addLaplaceNoise(raw, epsilon)
       const sparse  = stripZeros(noised)
       const schema  = buildFullSchema(fmt, sparse)
-
-      // Step 3: presign → PUT directly to Storj → register metadata
-      setStep('uploading')
-      const { data: presign } = await getPresignedUploadUrl(file.name, fmt)
-
-      await fetch(presign.url, {
-        method:  'PUT',
-        headers: { 'Content-Type': 'text/plain' },
-        body:    await file.arrayBuffer(),
-      })
-
-      const { data } = await registerDataset({
-        title,
-        description:     desc,
-        format_type:     fmt,
-        object_key:      presign.object_key,
-        epsilon,
-        feature_vector:  sparse,
-        feature_schema:  schema.all_features,
-        active_features: schema.active_features,
-        regions:         [],
-      })
-
-      setResult(data)
-      setStep('done')
+      setExtracted({ sparse, schema })
+      setStep('storageOptions')
     } catch (e) {
-      setErr(e.response?.data?.detail || e.message || 'Upload failed')
+      setErr(e.message || 'Feature extraction failed')
       setStep('select')
     }
   }
 
+  // Phase 2: upload / register based on storage choice
+  const handleContinue = async () => {
+    if (!extracted) return
+    setErr('')
+    setStep('uploading')
+    try {
+      let object_key = null
+
+      if (storageOption === 'raw_file') {
+        const { data: presign } = await getPresignedUploadUrl(file.name, fmt)
+        await fetch(presign.url, {
+          method:  'PUT',
+          headers: { 'Content-Type': 'text/plain' },
+          body:    await file.arrayBuffer(),
+        })
+        object_key = presign.object_key
+      }
+
+      const body = {
+        title,
+        description:     desc,
+        format_type:     fmt,
+        epsilon,
+        feature_vector:  extracted.sparse,
+        feature_schema:  extracted.schema.all_features,
+        active_features: extracted.schema.active_features,
+        regions:         [],
+      }
+      if (object_key) body.object_key = object_key
+
+      const { data } = await registerDataset(body)
+      setResult(data)
+      setStep('done')
+    } catch (e) {
+      setErr(e.response?.data?.detail || e.message || 'Upload failed')
+      setStep('storageOptions')
+    }
+  }
+
+  // ── Loading states ─────────────────────────────────────────────────────────
+  if (step === 'extracting' || step === 'uploading') {
+    return (
+      <div className="page max-w-xl mx-auto">
+        <div className="card text-center py-12">
+          <div className="w-10 h-10 rounded-xl bg-cyan/10 border border-cyan/20 flex items-center justify-center mx-auto mb-4 animate-pulse">
+            {step === 'extracting'
+              ? <Shield size={18} className="text-cyan" />
+              : <UploadIcon size={18} className="text-cyan" />}
+          </div>
+          <p className="font-display text-sm text-soft mb-1">
+            {step === 'extracting' ? 'Extracting features…' : 'Uploading…'}
+          </p>
+          <p className="text-xs text-muted">
+            {step === 'extracting'
+              ? 'Processing locally — no data sent to server yet'
+              : storageOption === 'raw_file' ? 'Uploading to Storj and registering dataset' : 'Registering dataset'}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Storage options step ───────────────────────────────────────────────────
+  if (step === 'storageOptions') {
+    return (
+      <div className="page max-w-xl mx-auto">
+        <h1 className="font-display text-2xl text-soft mb-1">Storage options</h1>
+        <p className="text-xs text-muted mb-8">
+          Choose how to store <span className="text-soft">{title}</span>
+        </p>
+
+        <div className="space-y-4 mb-8">
+          {/* Option A — features only */}
+          <div
+            onClick={() => setStorageOption('features_only')}
+            className={`card cursor-pointer transition-all select-none
+              ${storageOption === 'features_only' ? 'border-cyan bg-cyan/5' : 'hover:border-muted/60'}`}
+          >
+            <div className="flex items-start gap-3">
+              <div className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors
+                ${storageOption === 'features_only' ? 'border-cyan' : 'border-muted'}`}>
+                {storageOption === 'features_only' && <div className="w-2 h-2 rounded-full bg-cyan" />}
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <HardDrive size={13} className="text-muted" />
+                  <p className="text-sm font-display text-soft">Features only</p>
+                </div>
+                <p className="text-xs text-muted mb-2">
+                  Extract and store privacy-protected feature vector. Raw file is not uploaded.
+                </p>
+                <span className="text-[10px] font-display text-acid">+5 credits on registration</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Option B — features + raw file */}
+          <div
+            onClick={() => setStorageOption('raw_file')}
+            className={`card cursor-pointer transition-all select-none
+              ${storageOption === 'raw_file' ? 'border-cyan bg-cyan/5' : 'hover:border-muted/60'}`}
+          >
+            <div className="flex items-start gap-3">
+              <div className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors
+                ${storageOption === 'raw_file' ? 'border-cyan' : 'border-muted'}`}>
+                {storageOption === 'raw_file' && <div className="w-2 h-2 rounded-full bg-cyan" />}
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <Database size={13} className="text-muted" />
+                  <p className="text-sm font-display text-soft">Features + Raw file on Storj</p>
+                </div>
+                <p className="text-xs text-muted mb-2">
+                  Feature vector stored + encrypted raw file uploaded to decentralized storage.
+                  Researchers can request raw file access.
+                </p>
+                <span className="text-[10px] font-display text-acid">+15 credits on registration</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {err && (
+          <div className="flex items-center gap-2 text-xs text-red-400 bg-red-900/10 border border-red-900/30 rounded-lg p-3 mb-4">
+            <AlertCircle size={13} /> {err}
+          </div>
+        )}
+
+        <button onClick={handleContinue} className="btn-primary w-full justify-center">
+          Continue
+        </button>
+      </div>
+    )
+  }
+
+  // ── Done state ─────────────────────────────────────────────────────────────
   if (step === 'done' && result) {
     return (
       <div className="page max-w-xl mx-auto">
@@ -89,11 +204,12 @@ export default function Upload() {
             <Row label="Dataset ID"      value={result.dataset_id} mono />
             <Row label="Metadata CID"    value={result.metadata_cid} mono />
             <Row label="Active features" value={`${result.feature_count} features extracted`} />
+            <Row label="Storage"         value={result.has_raw_file ? 'Features + Raw file (Storj)' : 'Features only'} />
             <Row label="Privacy (ε)"     value={result.epsilon} />
           </div>
 
           <div className="flex gap-3">
-            <button onClick={() => { setFile(null); setTitle(''); setDesc(''); setResult(null); setStep('select') }}
+            <button onClick={() => { setFile(null); setTitle(''); setDesc(''); setResult(null); setExtracted(null); setStorageOption('features_only'); setStep('select') }}
               className="btn-ghost flex-1">Upload another</button>
             <button onClick={() => navigate('/explorer')} className="btn-primary flex-1">View explorer</button>
           </div>
@@ -102,6 +218,7 @@ export default function Upload() {
     )
   }
 
+  // ── Select / form state ────────────────────────────────────────────────────
   return (
     <div className="page max-w-2xl mx-auto">
       <h1 className="font-display text-2xl text-soft mb-1">Upload dataset</h1>
@@ -112,10 +229,10 @@ export default function Upload() {
       {/* Privacy pipeline visual */}
       <div className="card-sm mb-6 flex items-center gap-0 overflow-x-auto">
         {[
-          { icon: FileText,   label: 'raw file', sub: 'stays local' },
-          { icon: Shield,     label: 'extract',  sub: 'client-side' },
-          { icon: Lock,       label: 'dp noise', sub: `ε=${epsilon}` },
-          { icon: UploadIcon, label: 'upload',   sub: 'features only' },
+          { icon: FileText,   label: 'raw file',  sub: 'stays local' },
+          { icon: Shield,     label: 'extract',   sub: 'client-side' },
+          { icon: Lock,       label: 'dp noise',  sub: `ε=${epsilon}` },
+          { icon: UploadIcon, label: 'upload',    sub: 'features only' },
         ].map(({ icon: Icon, label, sub }, i, arr) => (
           <div key={label} className="flex items-center">
             <div className={`flex flex-col items-center px-4 py-2 ${
@@ -189,9 +306,7 @@ export default function Upload() {
 
         <button type="submit" disabled={!file || !title || step !== 'select'}
           className="btn-primary w-full justify-center disabled:opacity-40 disabled:cursor-not-allowed">
-          {step === 'extracting' ? '🔬 Extracting features…'
-           : step === 'uploading' ? '📡 Uploading…'
-           : 'Upload dataset'}
+          Extract features →
         </button>
       </form>
     </div>
