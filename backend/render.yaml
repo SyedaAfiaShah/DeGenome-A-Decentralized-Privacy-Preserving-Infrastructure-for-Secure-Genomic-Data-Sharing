@@ -3,7 +3,7 @@ services:
     name: degenome-api
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    startCommand: python migrate.py && uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PINATA_API_KEY
         sync: false
