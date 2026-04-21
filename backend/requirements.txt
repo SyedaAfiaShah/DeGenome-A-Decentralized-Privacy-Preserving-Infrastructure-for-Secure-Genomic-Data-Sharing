@@ -14,3 +14,4 @@ aiofiles==23.2.1
 boto3==1.42.89
 pydantic[email]==2.7.1
 email-validator==2.1.1
+psycopg2-binary==2.9.9

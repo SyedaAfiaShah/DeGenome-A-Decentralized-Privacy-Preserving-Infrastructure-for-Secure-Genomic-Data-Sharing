@@ -13,5 +13,13 @@ services:
         sync: false
       - key: DATABASE_URL
         sync: false
+      - key: STORJ_ENDPOINT
+        sync: false
+      - key: STORJ_ACCESS_KEY
+        sync: false
+      - key: STORJ_SECRET_KEY
+        sync: false
+      - key: STORJ_BUCKET
+        sync: false
       - key: ENVIRONMENT
         value: production
