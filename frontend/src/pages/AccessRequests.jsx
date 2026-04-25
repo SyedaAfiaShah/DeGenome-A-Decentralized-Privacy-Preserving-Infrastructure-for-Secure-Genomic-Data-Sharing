@@ -67,15 +67,21 @@ export default function AccessRequests() {
 
   const submitNewRequest = async () => {
     if (!newReqDatasetId.trim() || !newReqPurpose.trim() || newReqBusy) return
-    setNewReqBusy(true); setNewReqErr('')
     try {
+      setNewReqBusy(true)
+      setNewReqErr('')
       await requestAccess(newReqDatasetId.trim(), newReqPurpose.trim(), newReqAccessType)
       setShowNewReq(false)
-      setNewReqDatasetId(''); setNewReqPurpose(''); setNewReqAccessType('feature_access')
+      setNewReqDatasetId('')
+      setNewReqPurpose('')
+      setNewReqAccessType('feature_access')
       load()
     } catch (e) {
       setNewReqErr(e.response?.data?.detail || 'Request failed')
-    } finally { setNewReqBusy(false) }
+      setShowNewReq(false)
+    } finally {
+      setNewReqBusy(false)
+    }
   }
 
   const copyKey = () => {
@@ -166,8 +172,9 @@ export default function AccessRequests() {
 
       {/* ── New Request Modal ──────────────────────────────────────────── */}
       {showNewReq && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-md card space-y-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowNewReq(false)}>
+          <div className="w-full max-w-md card space-y-5" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h2 className="font-display text-base text-soft">Request dataset access</h2>
               <button onClick={() => { setShowNewReq(false); setNewReqErr('') }}
