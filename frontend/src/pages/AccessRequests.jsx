@@ -77,7 +77,13 @@ export default function AccessRequests() {
       setNewReqAccessType('feature_access')
       load()
     } catch (e) {
-      setNewReqErr(e.response?.data?.detail || 'Request failed')
+      let errMsg = 'Request failed'
+      if (e.response?.data?.detail) {
+        errMsg = Array.isArray(e.response.data.detail) 
+          ? e.response.data.detail.map(err => `${err.loc.join('.')}: ${err.msg}`).join(', ')
+          : e.response.data.detail
+      }
+      setNewReqErr(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg))
       setShowNewReq(false)
     } finally {
       setNewReqBusy(false)

@@ -24,7 +24,7 @@ class DecisionIn(BaseModel):
 def request_access(
     body: RequestIn,
     db:   Session = Depends(get_db),
-    user: User    = Depends(get_current_user),
+    user = Depends(get_current_user),
 ):
     if body.access_type not in ("feature_access", "raw_file_access"):
         raise HTTPException(400, "access_type must be feature_access or raw_file_access")
@@ -64,7 +64,7 @@ def request_access(
 def decide_request(
     body: DecisionIn,
     db:   Session = Depends(get_db),
-    user: User    = Depends(get_current_user),
+    user = Depends(get_current_user),
 ):
     req = db.query(AccessRequest).filter(AccessRequest.id == body.request_id).first()
     if not req:
@@ -113,7 +113,7 @@ def decide_request(
 @router.get("/incoming")
 def incoming_requests(
     db:   Session = Depends(get_db),
-    user: User    = Depends(get_current_user),
+    user = Depends(get_current_user),
 ):
     """Requests made to the current user's datasets."""
     my_dataset_ids = [d.id for d in db.query(Dataset).filter(Dataset.owner_id == user.id).all()]
@@ -124,7 +124,7 @@ def incoming_requests(
 @router.get("/outgoing")
 def outgoing_requests(
     db:   Session = Depends(get_db),
-    user: User    = Depends(get_current_user),
+    user = Depends(get_current_user),
 ):
     """Requests the current user has made."""
     reqs = db.query(AccessRequest).filter(AccessRequest.requester_id == user.id).all()
