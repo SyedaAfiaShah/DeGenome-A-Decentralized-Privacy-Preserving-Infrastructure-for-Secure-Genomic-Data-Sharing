@@ -8,7 +8,6 @@ from services.auth import get_current_user
 from services.credits import award_dataset_registration
 from services.ipfs import pin_json
 from services.storj import generate_presigned_upload_url
-from services.validation import validate_feature_vector
 import json
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
@@ -66,14 +65,6 @@ def register_dataset(
         raise HTTPException(400, f"format_type must be one of: {', '.join(ALLOWED_FORMATS)}")
     if current_user.role != "contributor":
         raise HTTPException(403, "Only contributors can register datasets")
-
-    if body.feature_vector:
-        is_valid, error_msg = validate_feature_vector(
-            body.feature_vector, 
-            body.format_type
-        )
-        if not is_valid:
-            raise HTTPException(status_code=400, detail=error_msg)
 
     metadata_json = {
         "owner":           current_user.username,
