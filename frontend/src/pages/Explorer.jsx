@@ -37,10 +37,16 @@ export default function Explorer() {
     if (!purpose.trim()) return
     setBusy(true)
     try {
-      await requestAccess({ dataset_id: modal.dataset.dataset_id, purpose })
+      await requestAccess(modal.dataset.dataset_id, purpose)
       setMsg('Request sent! The owner will be notified.')
     } catch (e) {
-      setMsg(e.response?.data?.detail || 'Request failed')
+      let errMsg = 'Request failed'
+      if (e.response?.data?.detail) {
+        errMsg = Array.isArray(e.response.data.detail) 
+          ? e.response.data.detail.map(err => `${err.loc.join('.')}: ${err.msg}`).join(', ')
+          : e.response.data.detail
+      }
+      setMsg(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg))
     } finally { setBusy(false) }
   }
 
