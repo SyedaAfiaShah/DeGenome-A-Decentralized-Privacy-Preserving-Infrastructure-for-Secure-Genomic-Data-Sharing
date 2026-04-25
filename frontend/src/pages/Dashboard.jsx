@@ -147,7 +147,7 @@ export default function Dashboard() {
         <div className="card mt-6">
           <p className="section-title flex items-center gap-2"><Key size={11} /> my api keys</p>
           <p className="text-[10px] text-muted mb-4">
-            Keys are issued automatically when a contributor approves your access request.
+            Keys are issued automatically when a contributor approves your access request. Full key shown at issuance only.
           </p>
 
           {myKeys.length === 0 ? (

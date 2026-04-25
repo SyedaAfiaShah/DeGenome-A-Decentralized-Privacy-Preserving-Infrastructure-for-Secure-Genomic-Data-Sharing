@@ -152,25 +152,20 @@ export default function Upload() {
 
           {/* Option B — features + raw file */}
           <div
-            onClick={() => setStorageOption('raw_file')}
-            className={`card cursor-pointer transition-all select-none
-              ${storageOption === 'raw_file' ? 'border-cyan bg-cyan/5' : 'hover:border-muted/60'}`}
+            className="card transition-all select-none opacity-40 pointer-events-none border-edge"
           >
             <div className="flex items-start gap-3">
-              <div className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors
-                ${storageOption === 'raw_file' ? 'border-cyan' : 'border-muted'}`}>
-                {storageOption === 'raw_file' && <div className="w-2 h-2 rounded-full bg-cyan" />}
+              <div className="mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors border-muted">
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
                   <Database size={13} className="text-muted" />
                   <p className="text-sm font-display text-soft">Features + Raw file on Storj</p>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-ink border border-edge text-muted">Coming Soon</span>
                 </div>
                 <p className="text-xs text-muted mb-2">
-                  Feature vector stored + encrypted raw file uploaded to decentralized storage.
-                  Researchers can request raw file access.
+                  Encrypted raw file storage with researcher key exchange coming in a future release.
                 </p>
-                <span className="text-[10px] font-display text-acid">+15 credits on registration</span>
               </div>
             </div>
           </div>

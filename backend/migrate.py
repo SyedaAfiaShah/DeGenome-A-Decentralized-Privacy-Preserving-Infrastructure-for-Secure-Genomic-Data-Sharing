@@ -19,6 +19,7 @@ migrations = [
     # access_requests table
     "ALTER TABLE access_requests ADD COLUMN IF NOT EXISTS access_type VARCHAR DEFAULT 'feature_access'",
     "ALTER TABLE access_requests ADD COLUMN IF NOT EXISTS approved_key_id VARCHAR",
+    "ALTER TABLE access_requests ADD COLUMN IF NOT EXISTS pending_key VARCHAR",
 
     # api_keys table
     "ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS dataset_id VARCHAR",

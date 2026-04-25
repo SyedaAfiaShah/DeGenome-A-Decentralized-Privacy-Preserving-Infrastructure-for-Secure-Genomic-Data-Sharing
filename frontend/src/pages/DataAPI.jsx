@@ -27,28 +27,11 @@ response = requests.post(
 print(response.json())`
 }
 
-function rawFilePythonSnippet(datasetId) {
-  return `import requests
 
-API_KEY = "dg_..."  # your full key from the approval email
-
-# Step 1: get a short-lived presigned download URL
-response = requests.get(
-    "${BACKEND}/data/raw-file/${datasetId}",
-    headers={"Authorization": f"Bearer {API_KEY}"}
-)
-download_url = response.json()["url"]
-
-# Step 2: download the raw file from Storj
-file_response = requests.get(download_url)
-with open("genomic_data.vcf", "wb") as f:
-    f.write(file_response.content)`
-}
 
 function curlSnippet(datasetId, accessType) {
   if (accessType === 'raw_file_access') {
-    return `curl -X GET ${BACKEND}/data/raw-file/${datasetId} \\
-  -H "Authorization: Bearer YOUR_FULL_KEY"`
+    return `echo "Raw file access is coming soon."`
   }
   return `curl -X POST ${BACKEND}/data/query \\
   -H "Authorization: Bearer YOUR_FULL_KEY" \\
@@ -131,13 +114,13 @@ export default function DataAPI() {
             const copied    = copiedCode[k.id] || false
             const isRawFile = k.access_type === 'raw_file_access'
             const tabs      = isRawFile
-              ? [{ key: 'python', label: 'Python' }, { key: 'curl', label: 'curl' }]
+              ? []
               : [{ key: 'python', label: 'Python' }, { key: 'curl', label: 'curl' }]
 
             const code = tab === 'curl'
               ? curlSnippet(k.dataset_id, k.access_type)
               : isRawFile
-                ? rawFilePythonSnippet(k.dataset_id)
+                ? 'Raw file access is coming soon.'
                 : featurePythonSnippet(k.dataset_id)
 
             return (

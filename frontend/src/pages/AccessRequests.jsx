@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { incomingRequests, outgoingRequests, decideAccess, requestAccess } from '../services/api'
+import { incomingRequests, outgoingRequests, decideAccess, requestAccess, claimKey } from '../services/api'
 import useAuthStore from '../store/authStore'
 import { CheckCircle, XCircle, Clock, Copy, Check, X, Key, Plus } from 'lucide-react'
 
@@ -51,19 +51,46 @@ export default function AccessRequests() {
   const decide = async (request_id, decision, req) => {
     setBusy(b => ({ ...b, [request_id]: true }))
     try {
-      const { data } = await decideAccess({ request_id, decision, days_valid: 30 })
+      await decideAccess({ request_id, decision, days_valid: 30 })
       load()
-      if (decision === 'approved' && data.api_key) {
-        setApprovalModal({
-          dataset_title: req.dataset_title,
-          access_type:   req.access_type,
-          api_key:       data.api_key,
-        })
-        setKeyCopied(false)
+      if (decision === 'approved') {
+        alert("Access granted. A key has been issued to the researcher.")
       }
     } catch {}
     setBusy(b => ({ ...b, [request_id]: false }))
   }
+
+  const handleClaimKey = async (reqId) => {
+    setBusy(b => ({ ...b, [reqId]: true }))
+    try {
+      const { data } = await claimKey(reqId)
+      if (data.key) {
+        setApprovalModal({
+          dataset_title: data.dataset_title,
+          access_type:   data.access_type,
+          api_key:       data.key,
+        })
+        setKeyCopied(false)
+        localStorage.setItem(`dg_claimed_${reqId}`, 'true')
+      } else {
+        alert("Key already claimed. Check your Dashboard for key prefix reference.")
+        localStorage.setItem(`dg_claimed_${reqId}`, 'true')
+        load()
+      }
+    } catch (e) {
+      alert("Failed to claim key.")
+    }
+    setBusy(b => ({ ...b, [reqId]: false }))
+  }
+
+  useEffect(() => {
+    outgoing.forEach(req => {
+      if (req.status === 'approved' && !localStorage.getItem(`dg_claimed_${req.request_id}`)) {
+        handleClaimKey(req.request_id)
+      }
+    })
+  }, [outgoing])
+
 
   const submitNewRequest = async () => {
     if (!newReqDatasetId.trim() || !newReqPurpose.trim() || newReqBusy) return
@@ -170,6 +197,17 @@ export default function AccessRequests() {
                     </button>
                   </div>
                 )}
+
+                {tab === 'outgoing' && req.status === 'approved' && !localStorage.getItem(`dg_claimed_${req.request_id}`) && (
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      onClick={() => handleClaimKey(req.request_id)}
+                      disabled={busy[req.request_id]}
+                      className="btn-primary text-xs py-1.5 px-3">
+                      Claim API Key
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -207,18 +245,24 @@ export default function AccessRequests() {
                   {
                     value: 'raw_file_access',
                     label: 'Raw File Access',
-                    desc:  'Access encrypted raw genomic file. Only available if contributor enabled raw file storage.',
+                    desc:  'Raw file access requires encrypted key exchange and will be available in a future release.',
+                    disabled: true
                   },
                 ].map(opt => (
                   <label key={opt.value}
-                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all
+                    className={`flex items-start gap-3 p-3 rounded-lg border transition-all
+                      ${opt.disabled ? 'opacity-40 pointer-events-none' : 'cursor-pointer'}
                       ${newReqAccessType === opt.value ? 'border-cyan bg-cyan/5' : 'border-edge hover:border-muted/60'}`}>
                     <input type="radio" name="access_type" value={opt.value}
+                      disabled={opt.disabled}
                       checked={newReqAccessType === opt.value}
                       onChange={() => setNewReqAccessType(opt.value)}
                       className="mt-0.5 accent-cyan shrink-0" />
-                    <div>
-                      <p className="text-xs font-display text-soft">{opt.label}</p>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-display text-soft">{opt.label}</p>
+                        {opt.disabled && <span className="text-[9px] px-1.5 py-0.5 rounded bg-ink border border-edge text-muted">Coming Soon</span>}
+                      </div>
                       <p className="text-[10px] text-muted mt-0.5">{opt.desc}</p>
                     </div>
                   </label>
@@ -259,7 +303,7 @@ export default function AccessRequests() {
                 <Key size={14} className="text-green-400" />
               </div>
               <div>
-                <h2 className="font-display text-base text-soft">Access Approved — API Key Generated</h2>
+                <h2 className="font-display text-base text-soft">Your API Key</h2>
                 <p className="text-xs text-muted mt-0.5">
                   {approvalModal.dataset_title} · {accessTypeBadge(approvalModal.access_type)}
                 </p>
@@ -268,7 +312,7 @@ export default function AccessRequests() {
 
             <div className="rounded-lg border border-yellow-700/40 bg-yellow-900/10 p-3">
               <p className="text-xs text-yellow-300 font-display mb-0.5">This key will not be shown again</p>
-              <p className="text-[10px] text-yellow-400/70">Copy it now and share it with the researcher securely.</p>
+              <p className="text-[10px] text-yellow-400/70">Copy this key now. It will not be shown again.</p>
             </div>
 
             <div>

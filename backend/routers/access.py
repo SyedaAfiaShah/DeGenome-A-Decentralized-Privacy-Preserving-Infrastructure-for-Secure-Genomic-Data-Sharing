@@ -96,7 +96,8 @@ def decide_request(
         db.add(api_key)
         db.flush()                          # populate api_key.id before commit
         req.approved_key_id = api_key.id
-        api_key_response = {"api_key": raw_key, "key_prefix": key_prefix}
+        req.pending_key     = raw_key
+        api_key_response = {"key_prefix": key_prefix}
 
     db.commit()
 
@@ -147,3 +148,31 @@ def _fmt(r: AccessRequest, db: Session) -> dict:
         "expires_at":    r.expires_at.isoformat() if r.expires_at else None,
         "created_at":    r.created_at.isoformat(),
     }
+
+@router.get("/{request_id}/claim-key")
+def claim_key(
+    request_id: str,
+    db:   Session = Depends(get_db),
+    user = Depends(get_current_user),
+):
+    req = db.query(AccessRequest).filter(AccessRequest.id == request_id).first()
+    if not req:
+        raise HTTPException(404, "Request not found")
+    if req.requester_id != user.id:
+        raise HTTPException(403, "Only the requester can claim the key")
+    
+    dataset = db.query(Dataset).filter(Dataset.id == req.dataset_id).first()
+    title = dataset.title if dataset else "Unknown"
+
+    if req.pending_key is not None:
+        key = req.pending_key
+        req.pending_key = None
+        db.commit()
+        return {
+            "key": key,
+            "dataset_id": req.dataset_id,
+            "access_type": req.access_type,
+            "dataset_title": title
+        }
+    
+    return {"key": None, "message": "Key already claimed or not available"}

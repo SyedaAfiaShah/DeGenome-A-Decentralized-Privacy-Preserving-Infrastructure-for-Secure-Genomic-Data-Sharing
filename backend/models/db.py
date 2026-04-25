@@ -57,6 +57,7 @@ class AccessRequest(Base):
     access_type      = Column(String, default="feature_access") # feature_access | raw_file_access
     purpose          = Column(Text)
     approved_key_id  = Column(String, ForeignKey("api_keys.id", use_alter=True), nullable=True)
+    pending_key      = Column(String, nullable=True)
     expires_at       = Column(DateTime, nullable=True)
     created_at       = Column(DateTime, default=datetime.utcnow)
     updated_at       = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
