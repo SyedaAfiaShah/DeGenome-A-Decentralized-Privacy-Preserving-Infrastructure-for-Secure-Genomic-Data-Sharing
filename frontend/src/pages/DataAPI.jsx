@@ -5,75 +5,20 @@ import useAuthStore from '../store/authStore'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts'
-import { Key, Copy, Check, Database, Code, ChevronDown, ChevronUp, Loader } from 'lucide-react'
-
-const BACKEND = 'https://degenome.onrender.com'
+import { Key, Database, Loader } from 'lucide-react'
 
 const NUCL_COLORS = { A: '#22c55e', T: '#ef4444', G: '#3b82f6', C: '#f97316' }
 const CHART_KEYS  = new Set(['A_count', 'T_count', 'G_count', 'C_count', 'GC_content'])
-
-const accessTypeBadge = t => t === 'raw_file_access'
-  ? <span className="text-[10px] font-display px-1.5 py-0.5 rounded border border-purple-700/40 bg-purple-900/20 text-purple-300">Raw File</span>
-  : <span className="text-[10px] font-display px-1.5 py-0.5 rounded border border-cyan/30 bg-cyan/10 text-cyan">Feature Access</span>
-
-function featurePythonSnippet(datasetId) {
-  return `import requests
-
-API_KEY = "dg_..."  # your full key from the approval email
-
-response = requests.post(
-    "${BACKEND}/data/query",
-    headers={"Authorization": f"Bearer {API_KEY}"},
-    json={
-        "dataset_id": "${datasetId}",
-        "feature_type": "SNP",
-        "filters": {}
-    }
-)
-print(response.json())`
-}
-
-function curlSnippet(datasetId, accessType) {
-  if (accessType === 'raw_file_access') {
-    return `echo "Raw file access is coming soon."`
-  }
-  return `curl -X POST ${BACKEND}/data/query \\
-  -H "Authorization: Bearer YOUR_FULL_KEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{"dataset_id": "${datasetId}", "feature_type": "SNP"}'`
-}
-
-function CodeBlock({ code, keyId, copied, onCopy }) {
-  return (
-    <div className="relative">
-      <pre className="bg-ink/60 border border-edge rounded-lg p-4 text-[11px] font-mono text-soft overflow-x-auto leading-relaxed">
-        {code}
-      </pre>
-      <button
-        onClick={() => onCopy(keyId, code)}
-        className="absolute top-2 right-2 p-1.5 rounded border border-edge bg-ink/80 hover:border-cyan/30 transition-colors">
-        {copied
-          ? <Check size={11} className="text-green-400" />
-          : <Copy size={11} className="text-muted" />}
-      </button>
-    </div>
-  )
-}
 
 export default function DataAPI() {
   const { user } = useAuthStore()
   const [myKeys,        setMyKeys]        = useState([])
   const [loading,       setLoading]       = useState(true)
   const [balance,       setBalance]       = useState(null)
-  // Query interface
   const [selectedKeyId, setSelectedKeyId] = useState('')
   const [features,      setFeatures]      = useState(null)
   const [featLoading,   setFeatLoading]   = useState(false)
   const [featError,     setFeatError]     = useState('')
-  // API Reference
-  const [showRef,       setShowRef]       = useState(false)
-  const [activeTabs,    setActiveTabs]    = useState({})
-  const [copiedCode,    setCopiedCode]    = useState({})
 
   useEffect(() => {
     Promise.all([
@@ -100,14 +45,6 @@ export default function DataAPI() {
       })
       .finally(() => setFeatLoading(false))
   }, [selectedKeyId])
-
-  const getTab   = keyId => activeTabs[keyId] || 'python'
-  const setTab   = (keyId, t) => setActiveTabs(prev => ({ ...prev, [keyId]: t }))
-  const copyCode = (keyId, code) => {
-    navigator.clipboard.writeText(code)
-    setCopiedCode(prev => ({ ...prev, [keyId]: true }))
-    setTimeout(() => setCopiedCode(prev => ({ ...prev, [keyId]: false })), 2000)
-  }
 
   const queryableKeys = myKeys.filter(k => k.access_type === 'feature_access')
 
@@ -138,7 +75,7 @@ export default function DataAPI() {
     return (
       <div className="page">
         <h1 className="font-display text-2xl text-soft mb-1">Data API Access</h1>
-        <p className="text-xs text-muted mb-8">Query datasets and access your API reference</p>
+        <p className="text-xs text-muted mb-8">Query your approved datasets</p>
         <div className="card text-center py-12">
           <p className="text-xs text-muted">Loading…</p>
         </div>
@@ -150,7 +87,7 @@ export default function DataAPI() {
     return (
       <div className="page">
         <h1 className="font-display text-2xl text-soft mb-1">Data API Access</h1>
-        <p className="text-xs text-muted mb-8">Query datasets and access your API reference</p>
+        <p className="text-xs text-muted mb-8">Query your approved datasets</p>
         <div className="card text-center py-16">
           <div className="w-12 h-12 rounded-xl bg-edge flex items-center justify-center mx-auto mb-4">
             <Key size={20} className="text-muted" />
@@ -170,10 +107,10 @@ export default function DataAPI() {
   return (
     <div className="page">
       <h1 className="font-display text-2xl text-soft mb-1">Data API Access</h1>
-      <p className="text-xs text-muted mb-8">Query datasets and access your API reference</p>
+      <p className="text-xs text-muted mb-8">Query your approved datasets</p>
 
-      {/* ── Section 1: Query Interface ───────────────────────────────── */}
-      <div className="card mb-6 space-y-5">
+      {/* ── Query Interface ───────────────────────────────────────────── */}
+      <div className="card space-y-5">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="section-title flex items-center gap-2"><Database size={11} /> query interface</p>
@@ -226,7 +163,6 @@ export default function DataAPI() {
         {/* Charts */}
         {features && !featLoading && (
           <div className="space-y-6">
-
             {/* Chart 1 — Nucleotide composition */}
             {nucleotideData.length > 0 && (
               <div>
@@ -321,104 +257,12 @@ export default function DataAPI() {
             Select a dataset above to visualize its feature vector.
           </p>
         )}
-      </div>
 
-      {/* ── Section 2: API Reference (collapsible) ───────────────────── */}
-      <div className="card">
-        <button
-          onClick={() => setShowRef(v => !v)}
-          className="w-full flex items-center justify-between gap-4">
-          <div className="text-left">
-            <p className="section-title">api reference</p>
-            <p className="text-[10px] text-muted">
-              Use this data in your own pipeline · For Colab, scripts, or production integrations
-            </p>
-          </div>
-          {showRef
-            ? <ChevronUp size={14} className="text-muted shrink-0" />
-            : <ChevronDown size={14} className="text-muted shrink-0" />}
-        </button>
-
-        {showRef && (
-          <div className="mt-5 space-y-6">
-            <p className="text-[10px] text-muted font-mono">
-              Replace <code className="text-soft">dg_...</code> with the full key you received on approval.
-              Keys are never stored — if lost, request access again.
-            </p>
-
-            {myKeys.map(k => {
-              const tab       = getTab(k.id)
-              const copied    = copiedCode[k.id] || false
-              const isRawFile = k.access_type === 'raw_file_access'
-              const tabs      = isRawFile
-                ? []
-                : [{ key: 'python', label: 'Python' }, { key: 'curl', label: 'curl' }]
-              const code = tab === 'curl'
-                ? curlSnippet(k.dataset_id, k.access_type)
-                : isRawFile
-                  ? 'Raw file access is coming soon.'
-                  : featurePythonSnippet(k.dataset_id)
-
-              return (
-                <div key={k.id} className="pb-6 border-b border-edge last:border-0 last:pb-0 space-y-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <div className="flex items-center gap-1.5">
-                          <Database size={12} className="text-muted" />
-                          <p className="text-sm font-display text-soft">
-                            {k.dataset_title || k.dataset_id?.slice(0, 8) + '…'}
-                          </p>
-                        </div>
-                        {accessTypeBadge(k.access_type)}
-                      </div>
-                      <p className="text-[10px] font-mono text-muted">
-                        Key: {k.key_prefix}… · dataset: {k.dataset_id?.slice(0, 8)}…
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      {k.last_used_at
-                        ? <p className="text-[10px] text-muted">used {new Date(k.last_used_at).toLocaleDateString()}</p>
-                        : <p className="text-[10px] text-muted/50">never used</p>}
-                      <p className="text-[10px] text-muted/50">
-                        issued {new Date(k.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg bg-ink/40 border border-edge px-3 py-2">
-                    <p className="text-[10px] text-muted">
-                      {isRawFile
-                        ? 'This key grants access to the raw encrypted file on Storj. Cost: 5 credits per download.'
-                        : 'This key grants access to privacy-protected feature vectors. Cost: 1 credit per query.'}
-                    </p>
-                  </div>
-
-                  <div>
-                    <div className="flex gap-1 mb-3">
-                      {tabs.map(t => (
-                        <button key={t.key} onClick={() => setTab(k.id, t.key)}
-                          className={`flex items-center gap-1.5 text-[10px] font-display px-3 py-1.5 rounded-lg border transition-all
-                            ${tab === t.key ? 'border-cyan text-cyan bg-cyan/10' : 'border-edge text-muted hover:border-muted'}`}>
-                          <Code size={9} />
-                          {t.label}
-                        </button>
-                      ))}
-                    </div>
-                    <CodeBlock code={code} keyId={k.id} copied={copied} onCopy={copyCode} />
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-1 border-t border-edge">
-                    <span className="text-[10px] text-muted">dataset_id</span>
-                    <code className="text-[10px] font-mono text-soft bg-ink/40 px-2 py-0.5 rounded border border-edge">
-                      {k.dataset_id}
-                    </code>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
+        <div className="pt-3 border-t border-edge text-center">
+          <Link to="/api-docs" className="text-xs text-cyan hover:underline">
+            Want to use this data in your own code? View API Reference →
+          </Link>
+        </div>
       </div>
     </div>
   )

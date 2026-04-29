@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import useAuthStore from '../store/authStore'
 import { switchRole } from '../services/api'
-import { Dna, LogOut, LayoutDashboard, Upload, Database, Bell, Activity, ArrowLeftRight } from 'lucide-react'
+import { Dna, LogOut, LayoutDashboard, Upload, Database, Bell, Activity, ArrowLeftRight, BookOpen } from 'lucide-react'
 
 export default function Navbar() {
   const user = useAuthStore(state => state.user)
@@ -19,6 +19,7 @@ export default function Navbar() {
     { to: '/explorer',        label: 'Explorer',   icon: Database },
     { to: '/access',          label: 'Access',     icon: Bell },
     { to: '/api',             label: 'Data API',   icon: Activity,        role: 'researcher' },
+    { to: '/api-docs',        label: 'API Docs',   icon: BookOpen,        role: 'researcher' },
   ]
 
   const active   = (path) => location.pathname === path

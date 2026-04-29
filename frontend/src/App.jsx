@@ -9,6 +9,7 @@ import Upload        from './pages/Upload'
 import Explorer      from './pages/Explorer'
 import AccessRequests from './pages/AccessRequests'
 import DataAPI       from './pages/DataAPI'
+import ApiDocs       from './pages/ApiDocs'
 
 function ProtectedRoute({ children, role }) {
   const { isAuthenticated, user } = useAuthStore()
@@ -73,6 +74,11 @@ export default function App() {
         <Route path="/api" element={
           <ProtectedRoute role="researcher">
             <Layout><DataAPI /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/api-docs" element={
+          <ProtectedRoute role="researcher">
+            <Layout><ApiDocs /></Layout>
           </ProtectedRoute>
         } />
 

@@ -18,6 +18,8 @@ export default function Upload() {
   const [extracted,     setExtracted]     = useState(null)             // { sparse, schema }
   const [result,        setResult]        = useState(null)
   const [err,           setErr]           = useState('')
+  const [consent,       setConsent]       = useState(false)
+  const [consentErr,    setConsentErr]    = useState('')
   const inputRef  = useRef()
   const navigate  = useNavigate()
 
@@ -38,6 +40,11 @@ export default function Upload() {
   const submit = async e => {
     e.preventDefault()
     if (!file || !title.trim()) return
+    if (!consent) {
+      setConsentErr('You must confirm data consent before continuing.')
+      return
+    }
+    setConsentErr('')
     setErr('')
     try {
       setStep('extracting')
@@ -281,6 +288,26 @@ export default function Upload() {
         </div>
 
         <div>
+          <label className="flex items-start gap-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={consent}
+              onChange={e => { setConsent(e.target.checked); if (e.target.checked) setConsentErr('') }}
+              className="mt-0.5 accent-cyan shrink-0"
+            />
+            <span className="text-xs text-muted leading-relaxed group-hover:text-soft transition-colors">
+              I confirm that this genomic data was collected with informed consent
+              and I have the right to share it on this platform.
+            </span>
+          </label>
+          {consentErr && (
+            <div className="flex items-center gap-2 text-xs text-red-400 bg-red-900/10 border border-red-900/30 rounded-lg p-3 mt-2">
+              <AlertCircle size={13} /> {consentErr}
+            </div>
+          )}
+        </div>
+
+        <div>
           <label className="label">Privacy budget (ε) — lower = more private</label>
           <div className="flex items-center gap-4">
             <input type="range" min="0.1" max="5" step="0.1" value={epsilon}
@@ -299,7 +326,7 @@ export default function Upload() {
           </div>
         )}
 
-        <button type="submit" disabled={!file || !title || step !== 'select'}
+        <button type="submit" disabled={!file || !title || !consent || step !== 'select'}
           className="btn-primary w-full justify-center disabled:opacity-40 disabled:cursor-not-allowed">
           Extract features →
         </button>
