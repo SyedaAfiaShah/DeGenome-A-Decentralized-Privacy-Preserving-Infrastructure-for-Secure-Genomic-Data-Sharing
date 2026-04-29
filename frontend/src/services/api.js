@@ -27,14 +27,17 @@ export const login      = d    => api.post('/auth/login', d)
 export const switchRole = role => api.patch('/auth/role', { role })
 
 // API Keys — auto-issued on approval, not manually created
-export const getMyKeys  = ()       => api.get('/auth/my-keys')
-export const revokeKey  = (keyId)  => api.delete(`/auth/api-keys/${keyId}`)
+export const getMyKeys      = ()       => api.get('/auth/my-keys')
+export const revokeKey      = (keyId)  => api.delete(`/auth/api-keys/${keyId}`)
+export const getDatasetKeys = ()       => api.get('/auth/dataset-keys')
 
 // Datasets
 export const listDatasets          = (fmt) => api.get('/datasets/', { params: fmt ? { format_type: fmt } : {} })
 export const myDatasets            = ()    => api.get('/datasets/my')
 export const getPresignedUploadUrl = (filename, format_type) => api.get('/datasets/presign', { params: { filename, format_type } })
 export const registerDataset       = (body) => api.post('/datasets/register', body)
+export const deleteDataset         = (datasetId)       => api.delete(`/datasets/${datasetId}`)
+export const updateDataset         = (datasetId, body) => api.patch(`/datasets/${datasetId}`, body)
 
 // Data API
 export const getDatasetInfo  = (id)              => api.get('/data/info',    { params: { dataset_id: id } })

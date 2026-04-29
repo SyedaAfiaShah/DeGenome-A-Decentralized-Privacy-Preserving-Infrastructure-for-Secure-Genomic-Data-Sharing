@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Any, Optional
 from models.database import get_db
-from models.db import Dataset, User
+from models.db import Dataset, User, ApiKey
 from services.auth import get_current_user
 from services.credits import award_dataset_registration
 from services.ipfs import pin_json
@@ -13,6 +13,11 @@ import json
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
 ALLOWED_FORMATS = {"fasta", "vcf"}
+
+
+class DatasetUpdateIn(BaseModel):
+    title:       Optional[str] = None
+    description: Optional[str] = None
 
 
 class RegisterIn(BaseModel):
@@ -135,6 +140,52 @@ def my_datasets(
 ):
     datasets = db.query(Dataset).filter(Dataset.owner_id == current_user.id).all()
     return [_dataset_summary(d) for d in datasets]
+
+
+@router.delete("/{dataset_id}")
+def delete_dataset(
+    dataset_id:   str,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(404, "Dataset not found")
+    if dataset.owner_id != current_user.id:
+        raise HTTPException(403, "Not your dataset")
+    dataset.is_active = False
+    db.query(ApiKey).filter(ApiKey.dataset_id == dataset_id).update({"is_active": False})
+    db.commit()
+    return {"message": "Dataset deleted"}
+
+
+@router.patch("/{dataset_id}")
+def update_dataset(
+    dataset_id:   str,
+    body:         DatasetUpdateIn,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(404, "Dataset not found")
+    if dataset.owner_id != current_user.id:
+        raise HTTPException(403, "Not your dataset")
+    if body.title is not None and body.title != "":
+        dataset.title = body.title
+    if body.description is not None:
+        dataset.description = body.description
+    db.commit()
+    db.refresh(dataset)
+    return {
+        "id":          dataset.id,
+        "title":       dataset.title,
+        "description": dataset.description,
+        "format_type": dataset.format_type,
+        "has_raw_file": dataset.has_raw_file,
+        "is_active":   dataset.is_active,
+        "created_at":  dataset.created_at.isoformat(),
+    }
 
 
 def _dataset_summary(d: Dataset) -> dict:

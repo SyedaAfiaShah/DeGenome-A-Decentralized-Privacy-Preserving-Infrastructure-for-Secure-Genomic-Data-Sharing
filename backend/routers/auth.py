@@ -112,6 +112,37 @@ def list_my_keys(
     ]
 
 
+@router.get("/dataset-keys")
+def list_dataset_keys(
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """List all active API keys issued for datasets owned by the current contributor."""
+    owned_dataset_ids = [
+        d.id for d in db.query(Dataset.id).filter(Dataset.owner_id == current_user.id).all()
+    ]
+    if not owned_dataset_ids:
+        return []
+    keys = (
+        db.query(ApiKey)
+        .filter(ApiKey.dataset_id.in_(owned_dataset_ids), ApiKey.is_active == True)
+        .all()
+    )
+    return [
+        {
+            "id":                  k.id,
+            "key_prefix":          k.key_prefix,
+            "access_type":         k.access_type,
+            "dataset_id":          k.dataset_id,
+            "dataset_title":       k.dataset.title if k.dataset else None,
+            "researcher_username": k.user.username if k.user else None,
+            "created_at":          k.created_at.isoformat(),
+            "last_used_at":        k.last_used_at.isoformat() if k.last_used_at else None,
+        }
+        for k in keys
+    ]
+
+
 @router.delete("/api-keys/{key_id}")
 def revoke_api_key(
     key_id:       str,
