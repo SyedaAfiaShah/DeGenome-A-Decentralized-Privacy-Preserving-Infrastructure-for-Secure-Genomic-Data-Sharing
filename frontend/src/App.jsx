@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import useAuthStore from './store/authStore'
 import Navbar from './components/Navbar'
+import ToastContainer from './components/ToastContainer'
 
 import Landing       from './pages/Landing'
 import { Login, Register } from './pages/Auth'
@@ -37,6 +38,8 @@ export default function App() {
   const { isAuthenticated } = useAuthStore()
 
   return (
+    <>
+    <ToastContainer />
     <BrowserRouter>
       <Routes>
         {/* Public */}
@@ -86,5 +89,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
+    </>
   )
 }

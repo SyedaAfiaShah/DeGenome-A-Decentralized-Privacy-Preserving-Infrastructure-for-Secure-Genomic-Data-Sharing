@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { incomingRequests, outgoingRequests, decideAccess, requestAccess, claimKey } from '../services/api'
+import { showToast } from '../components/ToastContainer'
 import useAuthStore from '../store/authStore'
 import { CheckCircle, XCircle, Clock, Copy, Check, X, Key, Plus } from 'lucide-react'
 
@@ -55,7 +56,7 @@ export default function AccessRequests() {
       await decideAccess({ request_id, decision, days_valid: 30 })
       load()
       if (decision === 'approved') {
-        alert("Access granted. A key has been issued to the researcher.")
+        showToast('Access granted. A key has been issued to the researcher.', 'success')
       }
     } catch {}
     setBusy(b => ({ ...b, [request_id]: false }))
@@ -74,12 +75,12 @@ export default function AccessRequests() {
         setKeyCopied(false)
         localStorage.setItem(`dg_claimed_${reqId}`, 'true')
       } else {
-        alert("Key already claimed. Check your Dashboard for key prefix reference.")
+        showToast('Key already claimed. Check your Dashboard for key prefix reference.', 'info')
         localStorage.setItem(`dg_claimed_${reqId}`, 'true')
         load()
       }
     } catch {
-      alert("Failed to claim key.")
+      showToast('Failed to claim key.', 'error')
     }
     setBusy(b => ({ ...b, [reqId]: false }))
   }
