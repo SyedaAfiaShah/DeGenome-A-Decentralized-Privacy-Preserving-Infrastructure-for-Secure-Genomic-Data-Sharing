@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
-import { Database, Lock, ChevronRight } from 'lucide-react'
+import { Database, Lock, ChevronRight, Pencil, Trash2 } from 'lucide-react'
 
-export default function DatasetCard({ dataset, onRequest, hasAccess }) {
+export default function DatasetCard({ dataset, onRequest, hasAccess, isOwner, onEdit, onDelete }) {
   const navigate = useNavigate()
 
   return (
@@ -18,9 +18,11 @@ export default function DatasetCard({ dataset, onRequest, hasAccess }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {hasAccess
-            ? <span className="badge-green badge">access granted</span>
-            : <span className="badge-muted badge"><Lock size={9} /> locked</span>}
+          {isOwner
+            ? <span className="text-[10px] font-display px-1.5 py-0.5 rounded border border-teal-700/40 bg-teal-900/20 text-teal-300">your dataset</span>
+            : hasAccess
+              ? <span className="badge-green badge">access granted</span>
+              : <span className="badge-muted badge"><Lock size={9} /> locked</span>}
         </div>
       </div>
 
@@ -37,7 +39,6 @@ export default function DatasetCard({ dataset, onRequest, hasAccess }) {
         )}
       </div>
 
-      {/* Feature pills (first 5) */}
       <div className="flex flex-wrap gap-1.5 mb-4">
         {(dataset.active_features || []).slice(0, 5).map(f => (
           <span key={f} className="text-[10px] font-mono px-2 py-0.5 bg-edge rounded text-muted">{f}</span>
@@ -54,13 +55,29 @@ export default function DatasetCard({ dataset, onRequest, hasAccess }) {
           {new Date(dataset.created_at).toLocaleDateString()}
         </span>
         <div className="flex items-center gap-2">
-          {!hasAccess && onRequest && (
-            <button
-              onClick={e => { e.stopPropagation(); onRequest(dataset) }}
-              className="btn-ghost text-xs py-1.5 px-3"
-            >
-              Request access
-            </button>
+          {isOwner ? (
+            <>
+              <button
+                onClick={e => { e.stopPropagation(); onEdit && onEdit(dataset) }}
+                className="p-1.5 rounded border border-edge text-muted hover:border-cyan/40 hover:text-cyan transition-colors"
+                title="Edit dataset">
+                <Pencil size={11} />
+              </button>
+              <button
+                onClick={e => { e.stopPropagation(); onDelete && onDelete(dataset) }}
+                className="p-1.5 rounded border border-edge text-muted hover:border-red-500/40 hover:text-red-400 transition-colors"
+                title="Delete dataset">
+                <Trash2 size={11} />
+              </button>
+            </>
+          ) : (
+            !hasAccess && onRequest && (
+              <button
+                onClick={e => { e.stopPropagation(); onRequest(dataset) }}
+                className="btn-ghost text-xs py-1.5 px-3">
+                Request access
+              </button>
+            )
           )}
           <ChevronRight size={14} className="text-muted group-hover:text-cyan transition-colors" />
         </div>

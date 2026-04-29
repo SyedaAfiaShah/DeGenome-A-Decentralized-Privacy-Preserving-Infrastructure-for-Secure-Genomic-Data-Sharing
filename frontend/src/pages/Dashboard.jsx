@@ -1,27 +1,40 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { getBalance, getCreditHistory, myDatasets, getQueryLogs, getMyKeys, revokeKey } from '../services/api'
+import {
+  getBalance, getCreditHistory, myDatasets, getQueryLogs,
+  getMyKeys, revokeKey, getDatasetKeys,
+} from '../services/api'
 import useAuthStore from '../store/authStore'
 import { Upload, Database, Activity, TrendingUp, Clock, Key, ExternalLink, Trash2 } from 'lucide-react'
 
 const accessTypeBadge = t => t === 'raw_file_access'
   ? <span className="text-[10px] font-display px-1.5 py-0.5 rounded border border-purple-700/40 bg-purple-900/20 text-purple-300">Raw File</span>
-  : <span className="text-[10px] font-display px-1.5 py-0.5 rounded border border-cyan/30 bg-cyan/10 text-cyan">Feature</span>
+  : <span className="text-[10px] font-display px-1.5 py-0.5 rounded border border-cyan/30 bg-cyan/10 text-cyan">Feature Access</span>
 
 export default function Dashboard() {
   const { user, updateCredits, isContributor, isResearcher } = useAuthStore()
-  const [balance,  setBalance]  = useState(null)
-  const [history,  setHistory]  = useState([])
-  const [datasets, setDatasets] = useState([])
-  const [logs,     setLogs]     = useState([])
-  const [myKeys,   setMyKeys]   = useState([])
-  const [revoking, setRevoking] = useState({})
+  const [balance,            setBalance]            = useState(null)
+  const [history,            setHistory]            = useState([])
+  const [datasets,           setDatasets]           = useState([])
+  const [logs,               setLogs]               = useState([])
+  const [myKeys,             setMyKeys]             = useState([])
+  const [revoking,           setRevoking]           = useState({})
+  const [datasetKeys,        setDatasetKeys]        = useState([])
+  const [datasetKeysLoading, setDatasetKeysLoading] = useState(false)
+  const [datasetKeysError,   setDatasetKeysError]   = useState(false)
 
   useEffect(() => {
     getBalance().then(r => { setBalance(r.data); updateCredits(r.data.credits, r.data.earnings) }).catch(() => {})
     getCreditHistory().then(r => setHistory(r.data)).catch(() => {})
     getQueryLogs().then(r => setLogs(r.data)).catch(() => {})
-    if (isContributor()) myDatasets().then(r => setDatasets(r.data)).catch(() => {})
+    if (isContributor()) {
+      myDatasets().then(r => setDatasets(r.data)).catch(() => {})
+      setDatasetKeysLoading(true)
+      getDatasetKeys()
+        .then(r => setDatasetKeys(r.data))
+        .catch(() => setDatasetKeysError(true))
+        .finally(() => setDatasetKeysLoading(false))
+    }
     getMyKeys().then(r => setMyKeys(r.data)).catch(() => {})
   }, [])
 
@@ -30,6 +43,15 @@ export default function Dashboard() {
     try {
       await revokeKey(keyId)
       setMyKeys(prev => prev.filter(k => k.id !== keyId))
+    } catch {}
+    setRevoking(r => ({ ...r, [keyId]: false }))
+  }
+
+  const handleRevokeDatasetKey = async (keyId) => {
+    setRevoking(r => ({ ...r, [keyId]: true }))
+    try {
+      await revokeKey(keyId)
+      setDatasetKeys(prev => prev.filter(k => k.id !== keyId))
     } catch {}
     setRevoking(r => ({ ...r, [keyId]: false }))
   }
@@ -195,15 +217,52 @@ export default function Dashboard() {
             API keys issued to researchers for your datasets. You can revoke any key at any time.
           </p>
 
-          <div className="rounded-lg border border-edge bg-ink/30 p-4 text-center">
-            <p className="text-xs text-muted mb-1">
-              Endpoint needed: <code className="font-mono text-soft">GET /auth/dataset-keys</code>
-            </p>
-            <p className="text-[10px] text-muted">
-              This endpoint will return all active API keys issued to researchers for datasets you own,
-              allowing contributors to see and revoke researcher access from this view.
-            </p>
-          </div>
+          {datasetKeysLoading ? (
+            <p className="text-xs text-muted">Loading…</p>
+          ) : datasetKeysError ? (
+            <p className="text-xs text-red-400">Could not load access keys.</p>
+          ) : datasetKeys.length === 0 ? (
+            <p className="text-xs text-muted">No researchers currently have access to your datasets.</p>
+          ) : (
+            <div className="space-y-2">
+              {datasetKeys.map(k => (
+                <div key={k.id}
+                  className="flex items-center justify-between py-2.5 border-b border-edge last:border-0 gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <p className="text-xs font-display text-soft">
+                        {k.dataset_title || k.dataset_id?.slice(0, 8) + '…'}
+                      </p>
+                      {accessTypeBadge(k.access_type)}
+                    </div>
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <p className="text-[10px] text-muted">
+                        Researcher: <span className="text-soft font-mono">{k.researcher_username}</span>
+                      </p>
+                      <p className="text-[10px] font-mono text-muted">{k.key_prefix}…</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="text-right">
+                      {k.last_used_at
+                        ? <p className="text-[10px] text-muted">used {new Date(k.last_used_at).toLocaleDateString()}</p>
+                        : <p className="text-[10px] text-muted/50">never used</p>}
+                      <p className="text-[10px] text-muted/50">
+                        issued {new Date(k.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleRevokeDatasetKey(k.id)}
+                      disabled={revoking[k.id]}
+                      title="Revoke key"
+                      className="p-1.5 rounded border border-edge text-muted hover:border-red-500/40 hover:text-red-400 transition-colors disabled:opacity-40">
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

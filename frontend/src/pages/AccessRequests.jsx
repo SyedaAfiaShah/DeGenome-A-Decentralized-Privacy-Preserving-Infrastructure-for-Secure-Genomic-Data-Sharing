@@ -7,6 +7,7 @@ const statusBadge = s => ({
   approved: <span className="badge-green badge"><CheckCircle size={9} /> approved</span>,
   rejected: <span className="badge-red badge"><XCircle size={9} /> rejected</span>,
   pending:  <span className="badge-yellow badge"><Clock size={9} /> pending</span>,
+  revoked:  <span className="badge-muted badge">revoked</span>,
 }[s] || <span className="badge-muted badge">{s}</span>)
 
 const accessTypeBadge = t => t === 'raw_file_access'
@@ -32,7 +33,7 @@ export default function AccessRequests() {
   const [newReqErr,        setNewReqErr]        = useState('')
 
   // Approval key modal state
-  const [approvalModal, setApprovalModal] = useState(null)  // { dataset_title, access_type, api_key }
+  const [approvalModal, setApprovalModal] = useState(null)
   const [keyCopied,     setKeyCopied]     = useState(false)
 
   const load = () => {
@@ -77,7 +78,7 @@ export default function AccessRequests() {
         localStorage.setItem(`dg_claimed_${reqId}`, 'true')
         load()
       }
-    } catch (e) {
+    } catch {
       alert("Failed to claim key.")
     }
     setBusy(b => ({ ...b, [reqId]: false }))
@@ -90,7 +91,6 @@ export default function AccessRequests() {
       }
     })
   }, [outgoing])
-
 
   const submitNewRequest = async () => {
     if (!newReqDatasetId.trim() || !newReqPurpose.trim() || newReqBusy) return
@@ -106,7 +106,7 @@ export default function AccessRequests() {
     } catch (e) {
       let errMsg = 'Request failed'
       if (e.response?.data?.detail) {
-        errMsg = Array.isArray(e.response.data.detail) 
+        errMsg = Array.isArray(e.response.data.detail)
           ? e.response.data.detail.map(err => `${err.loc.join('.')}: ${err.msg}`).join(', ')
           : e.response.data.detail
       }
@@ -123,7 +123,17 @@ export default function AccessRequests() {
     setTimeout(() => setKeyCopied(false), 2000)
   }
 
-  const list = tab === 'incoming' ? incoming : outgoing
+  // History: reuse existing fetched data, sorted newest first
+  const historyList = [...(isContributor() ? incoming : outgoing)]
+    .sort((a, b) => new Date(b.created_at || b.updated_at || 0) - new Date(a.created_at || a.updated_at || 0))
+
+  const list = tab === 'incoming' ? incoming : tab === 'outgoing' ? outgoing : historyList
+
+  const tabs = [
+    { key: 'incoming', label: `Incoming (${incoming.length})` },
+    { key: 'outgoing', label: `Outgoing (${outgoing.length})` },
+    { key: 'history',  label: 'History' },
+  ]
 
   return (
     <div className="page">
@@ -132,11 +142,8 @@ export default function AccessRequests() {
 
       {/* Tabs + New Request button */}
       <div className="flex items-center justify-between gap-2 mb-6">
-        <div className="flex gap-2">
-          {[
-            { key: 'incoming', label: `Incoming (${incoming.length})` },
-            { key: 'outgoing', label: `Outgoing (${outgoing.length})` },
-          ].map(t => (
+        <div className="flex gap-2 flex-wrap">
+          {tabs.map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
               className={`text-xs font-display px-4 py-2 rounded-lg border transition-all
                 ${tab === t.key ? 'border-cyan text-cyan bg-cyan/10' : 'border-edge text-muted hover:border-muted'}`}>
@@ -155,7 +162,9 @@ export default function AccessRequests() {
 
       {list.length === 0 ? (
         <div className="card text-center py-12">
-          <p className="text-sm text-muted">No {tab} requests.</p>
+          <p className="text-sm text-muted">
+            {tab === 'history' ? 'No request history yet.' : `No ${tab} requests.`}
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -169,7 +178,9 @@ export default function AccessRequests() {
                     {req.access_type && accessTypeBadge(req.access_type)}
                   </div>
                   <p className="text-xs text-muted mb-2">
-                    {tab === 'incoming' ? `From: ${req.requester}` : `Dataset ID: ${req.dataset_id?.slice(0, 8)}…`}
+                    {(tab === 'incoming' || (tab === 'history' && isContributor()))
+                      ? `From: ${req.requester}`
+                      : `Dataset ID: ${req.dataset_id?.slice(0, 8)}…`}
                   </p>
                   {req.purpose && (
                     <p className="text-xs text-muted italic">"{req.purpose}"</p>
@@ -178,6 +189,20 @@ export default function AccessRequests() {
                     <p className="text-[10px] text-muted mt-1 font-mono">
                       expires {new Date(req.expires_at).toLocaleDateString()}
                     </p>
+                  )}
+                  {tab === 'history' && (
+                    <div className="flex gap-4 mt-2 flex-wrap">
+                      {req.created_at && (
+                        <p className="text-[10px] text-muted font-mono">
+                          Requested: {new Date(req.created_at).toLocaleDateString()}
+                        </p>
+                      )}
+                      {req.updated_at && req.status !== 'pending' && (
+                        <p className="text-[10px] text-muted font-mono">
+                          Decided: {new Date(req.updated_at).toLocaleDateString()}
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
 

@@ -1,19 +1,38 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { listDatasets, outgoingRequests, requestAccess, getFeatureSchema } from '../services/api'
+import {
+  listDatasets, outgoingRequests, requestAccess,
+  getFeatureSchema, myDatasets, updateDataset, deleteDataset,
+} from '../services/api'
+import useAuthStore from '../store/authStore'
 import DatasetCard from '../components/DatasetCard'
-import FeatureViewer from '../components/FeatureViewer'
-import { Search, X, Database } from 'lucide-react'
+import { Search, X, Database, AlertTriangle } from 'lucide-react'
 
 export default function Explorer() {
-  const [datasets,  setDatasets]  = useState([])
-  const [approved,  setApproved]  = useState(new Set())
-  const [filter,    setFilter]    = useState('')
-  const [fmtFilter, setFmtFilter] = useState('')
-  const [modal,     setModal]     = useState(null)   // { dataset, schema }
-  const [purpose,   setPurpose]   = useState('')
-  const [busy,      setBusy]      = useState(false)
-  const [msg,       setMsg]       = useState('')
+  const user          = useAuthStore(state => state.user)
+  const isContributor = useAuthStore(state => state.isContributor)
+
+  const [datasets,     setDatasets]     = useState([])
+  const [approved,     setApproved]     = useState(new Set())
+  const [ownedIds,     setOwnedIds]     = useState(new Set())
+  const [filter,       setFilter]       = useState('')
+  const [fmtFilter,    setFmtFilter]    = useState('')
+  const [modal,        setModal]        = useState(null)
+  const [purpose,      setPurpose]      = useState('')
+  const [busy,         setBusy]         = useState(false)
+  const [msg,          setMsg]          = useState('')
+
+  // Edit modal
+  const [editTarget,   setEditTarget]   = useState(null)
+  const [editTitle,    setEditTitle]    = useState('')
+  const [editDesc,     setEditDesc]     = useState('')
+  const [editBusy,     setEditBusy]     = useState(false)
+  const [editErr,      setEditErr]      = useState('')
+  const [editOk,       setEditOk]       = useState(false)
+
+  // Delete confirmation
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleteBusy,   setDeleteBusy]   = useState(false)
+  const [deleteErr,    setDeleteErr]    = useState('')
 
   useEffect(() => {
     listDatasets().then(r => setDatasets(r.data)).catch(() => {})
@@ -21,6 +40,9 @@ export default function Explorer() {
       const ids = new Set(r.data.filter(x => x.status === 'approved').map(x => x.dataset_id))
       setApproved(ids)
     }).catch(() => {})
+    if (isContributor()) {
+      myDatasets().then(r => setOwnedIds(new Set(r.data.map(d => d.dataset_id)))).catch(() => {})
+    }
   }, [])
 
   const openRequest = async (dataset) => {
@@ -42,12 +64,55 @@ export default function Explorer() {
     } catch (e) {
       let errMsg = 'Request failed'
       if (e.response?.data?.detail) {
-        errMsg = Array.isArray(e.response.data.detail) 
+        errMsg = Array.isArray(e.response.data.detail)
           ? e.response.data.detail.map(err => `${err.loc.join('.')}: ${err.msg}`).join(', ')
           : e.response.data.detail
       }
       setMsg(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg))
     } finally { setBusy(false) }
+  }
+
+  const openEdit = (dataset) => {
+    setEditTarget(dataset)
+    setEditTitle(dataset.title)
+    setEditDesc(dataset.description || '')
+    setEditErr('')
+    setEditOk(false)
+  }
+
+  const saveEdit = async () => {
+    setEditBusy(true)
+    setEditErr('')
+    try {
+      await updateDataset(editTarget.dataset_id, { title: editTitle, description: editDesc })
+      setDatasets(prev => prev.map(d =>
+        d.dataset_id === editTarget.dataset_id ? { ...d, title: editTitle, description: editDesc } : d
+      ))
+      setEditOk(true)
+    } catch {
+      setEditErr('Failed to save changes.')
+    } finally {
+      setEditBusy(false)
+    }
+  }
+
+  const openDelete = (dataset) => {
+    setDeleteTarget(dataset)
+    setDeleteErr('')
+  }
+
+  const confirmDelete = async () => {
+    setDeleteBusy(true)
+    setDeleteErr('')
+    try {
+      await deleteDataset(deleteTarget.dataset_id)
+      setDatasets(prev => prev.filter(d => d.dataset_id !== deleteTarget.dataset_id))
+      setDeleteTarget(null)
+    } catch {
+      setDeleteErr('Failed to delete dataset. Please try again.')
+    } finally {
+      setDeleteBusy(false)
+    }
   }
 
   const filtered = datasets.filter(d => {
@@ -97,13 +162,16 @@ export default function Explorer() {
               key={d.dataset_id}
               dataset={d}
               hasAccess={approved.has(d.dataset_id)}
+              isOwner={ownedIds.has(d.dataset_id)}
               onRequest={openRequest}
+              onEdit={openEdit}
+              onDelete={openDelete}
             />
           ))}
         </div>
       )}
 
-      {/* Request access modal */}
+      {/* ── Request access modal ──────────────────────────────────────── */}
       {modal && (
         <div className="fixed inset-0 bg-void/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="card w-full max-w-md relative">
@@ -139,6 +207,77 @@ export default function Explorer() {
               className="btn-primary w-full justify-center disabled:opacity-40">
               {busy ? 'Sending…' : 'Send request'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit modal ────────────────────────────────────────────────── */}
+      {editTarget && (
+        <div className="fixed inset-0 bg-void/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => !editBusy && setEditTarget(null)}>
+          <div className="card w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="font-display text-soft text-base">Edit dataset</h3>
+              <button onClick={() => !editBusy && setEditTarget(null)} className="text-muted hover:text-soft">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div>
+              <label className="label">Title</label>
+              <input className="input" value={editTitle} onChange={e => setEditTitle(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Description</label>
+              <textarea className="input resize-none h-24" value={editDesc}
+                onChange={e => setEditDesc(e.target.value)} />
+            </div>
+
+            {editErr && <p className="text-xs text-red-400">{editErr}</p>}
+            {editOk  && <p className="text-xs text-green-400">Changes saved.</p>}
+
+            <div className="flex gap-3">
+              <button onClick={() => setEditTarget(null)} disabled={editBusy}
+                className="btn-ghost flex-1 justify-center">Cancel</button>
+              <button onClick={saveEdit}
+                disabled={editBusy || !editTitle.trim() || editOk}
+                className="btn-primary flex-1 justify-center disabled:opacity-40">
+                {editBusy ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete confirmation modal ─────────────────────────────────── */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-void/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => !deleteBusy && setDeleteTarget(null)}>
+          <div className="card w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-lg bg-red-900/30 border border-red-800/40 flex items-center justify-center shrink-0">
+                <AlertTriangle size={14} className="text-red-400" />
+              </div>
+              <div>
+                <h3 className="font-display text-soft text-base">Delete dataset</h3>
+                <p className="text-xs text-muted mt-1">
+                  Are you sure you want to delete{' '}
+                  <span className="text-soft">"{deleteTarget.title}"</span>?
+                  This will revoke all active API keys for this dataset. This cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            {deleteErr && <p className="text-xs text-red-400">{deleteErr}</p>}
+
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteTarget(null)} disabled={deleteBusy}
+                className="btn-ghost flex-1 justify-center">Cancel</button>
+              <button onClick={confirmDelete} disabled={deleteBusy}
+                className="btn-danger flex-1 justify-center disabled:opacity-40">
+                {deleteBusy ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
           </div>
         </div>
       )}
