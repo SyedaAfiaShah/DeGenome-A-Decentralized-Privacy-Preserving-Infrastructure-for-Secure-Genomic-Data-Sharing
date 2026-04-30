@@ -59,6 +59,7 @@ export const decideAccess    = (d)  => api.post('/access/decide', d)
 export const incomingRequests= ()   => api.get('/access/incoming')
 export const outgoingRequests= ()   => api.get('/access/outgoing')
 export const claimKey        = (requestId) => api.get(`/access/${requestId}/claim-key`)
+export const reissueKey      = (requestId) => api.post(`/access/${requestId}/reissue-key`)
 
 // Credits
 export const getBalance      = ()   => api.get('/credits/balance')

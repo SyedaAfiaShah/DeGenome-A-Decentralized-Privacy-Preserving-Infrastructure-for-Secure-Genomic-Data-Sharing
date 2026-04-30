@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   listDatasets, outgoingRequests, requestAccess,
-  getFeatureSchema, myDatasets, updateDataset, deleteDataset,
+  getFeatureSchema, myDatasets, updateDataset, deleteDataset, reissueKey,
 } from '../services/api'
 import useAuthStore from '../store/authStore'
 import DatasetCard from '../components/DatasetCard'
@@ -13,6 +13,7 @@ export default function Explorer() {
 
   const [datasets,     setDatasets]     = useState([])
   const [approved,     setApproved]     = useState(new Set())
+  const [approvedMap,  setApprovedMap]  = useState(new Map())
   const [ownedIds,     setOwnedIds]     = useState(new Set())
   const [filter,       setFilter]       = useState('')
   const [fmtFilter,    setFmtFilter]    = useState('')
@@ -34,11 +35,18 @@ export default function Explorer() {
   const [deleteBusy,   setDeleteBusy]   = useState(false)
   const [deleteErr,    setDeleteErr]    = useState('')
 
+  // Reissue key
+  const [reissueTarget, setReissueTarget] = useState(null)
+  const [reissueResult, setReissueResult] = useState(null)
+  const [reissueBusy,   setReissueBusy]   = useState(false)
+  const [reissueErr,    setReissueErr]    = useState('')
+
   useEffect(() => {
     listDatasets().then(r => setDatasets(r.data)).catch(() => {})
     outgoingRequests().then(r => {
-      const ids = new Set(r.data.filter(x => x.status === 'approved').map(x => x.dataset_id))
-      setApproved(ids)
+      const approvedReqs = r.data.filter(x => x.status === 'approved')
+      setApproved(new Set(approvedReqs.map(x => x.dataset_id)))
+      setApprovedMap(new Map(approvedReqs.map(x => [x.dataset_id, x.request_id])))
     }).catch(() => {})
     if (isContributor()) {
       myDatasets().then(r => setOwnedIds(new Set(r.data.map(d => d.dataset_id)))).catch(() => {})
@@ -115,6 +123,26 @@ export default function Explorer() {
     }
   }
 
+  const openReissue = (dataset) => {
+    setReissueTarget(dataset)
+    setReissueResult(null)
+    setReissueErr('')
+  }
+
+  const confirmReissue = async () => {
+    setReissueBusy(true)
+    setReissueErr('')
+    try {
+      const requestId = approvedMap.get(reissueTarget.dataset_id)
+      const { data } = await reissueKey(requestId)
+      setReissueResult(data)
+    } catch (e) {
+      const detail = e.response?.data?.detail
+      setReissueErr(typeof detail === 'string' ? detail : 'Failed to issue new key.')
+    } finally {
+      setReissueBusy(false) }
+  }
+
   const filtered = datasets.filter(d => {
     const q = filter.toLowerCase()
     const matchesText = !q || d.title?.toLowerCase().includes(q) ||
@@ -163,9 +191,11 @@ export default function Explorer() {
               dataset={d}
               hasAccess={approved.has(d.dataset_id)}
               isOwner={ownedIds.has(d.dataset_id)}
+              requestId={approvedMap.get(d.dataset_id)}
               onRequest={openRequest}
               onEdit={openEdit}
               onDelete={openDelete}
+              onReissueRequest={openReissue}
             />
           ))}
         </div>
@@ -278,6 +308,58 @@ export default function Explorer() {
                 {deleteBusy ? 'Deleting…' : 'Delete'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* ── Reissue key confirmation modal ───────────────────────────── */}
+      {reissueTarget && !reissueResult && (
+        <div className="fixed inset-0 bg-void/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => !reissueBusy && setReissueTarget(null)}>
+          <div className="card w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="font-display text-soft text-base">Request new API key</h3>
+              <button onClick={() => !reissueBusy && setReissueTarget(null)} className="text-muted hover:text-soft">
+                <X size={16} />
+              </button>
+            </div>
+            <p className="text-xs text-muted">
+              This will invalidate your existing key for{' '}
+              <span className="text-soft">"{reissueTarget.title}"</span>{' '}
+              and issue a new one. Your old key will stop working immediately.
+            </p>
+            {reissueErr && <p className="text-xs text-red-400">{reissueErr}</p>}
+            <div className="flex gap-3">
+              <button onClick={() => setReissueTarget(null)} disabled={reissueBusy}
+                className="btn-ghost flex-1 justify-center">Cancel</button>
+              <button onClick={confirmReissue} disabled={reissueBusy}
+                className="btn-primary flex-1 justify-center disabled:opacity-40">
+                {reissueBusy ? 'Issuing…' : 'Issue new key'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── New key display modal ──────────────────────────────────────── */}
+      {reissueResult && (
+        <div className="fixed inset-0 bg-void/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="card w-full max-w-md space-y-4">
+            <h3 className="font-display text-soft text-base">New API Key Issued</h3>
+            <p className="text-xs text-amber-400 font-display">
+              Copy this key now. It will not be shown again.
+            </p>
+            <div className="relative">
+              <pre className="text-xs font-mono bg-edge rounded p-3 break-all whitespace-pre-wrap text-cyan pr-14">
+                {reissueResult.key}
+              </pre>
+              <button
+                onClick={() => navigator.clipboard.writeText(reissueResult.key)}
+                className="absolute top-2 right-2 text-[10px] font-display px-2 py-1 rounded border border-edge text-muted hover:text-soft hover:border-cyan/40 transition-colors">
+                Copy
+              </button>
+            </div>
+            <button onClick={() => { setReissueResult(null); setReissueTarget(null) }}
+              className="btn-primary w-full justify-center">Done</button>
           </div>
         </div>
       )}

@@ -149,6 +149,56 @@ def _fmt(r: AccessRequest, db: Session) -> dict:
         "created_at":    r.created_at.isoformat(),
     }
 
+@router.post("/{request_id}/reissue-key")
+def reissue_key(
+    request_id: str,
+    db:   Session = Depends(get_db),
+    user = Depends(get_current_user),
+):
+    access_request = db.query(AccessRequest).filter(AccessRequest.id == request_id).first()
+    if not access_request:
+        raise HTTPException(404, "Access request not found")
+    if access_request.requester_id != user.id:
+        raise HTTPException(403, "You can only reissue keys for your own approved requests")
+    if access_request.status != "approved":
+        raise HTTPException(400, "Access must be approved before a key can be reissued")
+
+    dataset = db.query(Dataset).filter(Dataset.id == access_request.dataset_id).first()
+
+    existing_key = db.query(ApiKey).filter(
+        ApiKey.user_id     == user.id,
+        ApiKey.dataset_id  == access_request.dataset_id,
+        ApiKey.access_type == access_request.access_type,
+        ApiKey.is_active   == True,
+    ).first()
+    if existing_key:
+        existing_key.is_active = False
+
+    raw_key, key_hash, key_prefix = generate_api_key()
+    api_key = ApiKey(
+        user_id     = user.id,
+        dataset_id  = access_request.dataset_id,
+        access_type = access_request.access_type,
+        key_hash    = key_hash,
+        key_prefix  = key_prefix,
+        name        = f"{dataset.title} - {access_request.access_type}",
+    )
+    db.add(api_key)
+    db.flush()
+
+    access_request.pending_key     = raw_key
+    access_request.approved_key_id = api_key.id
+    db.commit()
+
+    return {
+        "message":     "New key issued successfully",
+        "key":         raw_key,
+        "key_prefix":  key_prefix,
+        "dataset_id":  access_request.dataset_id,
+        "access_type": access_request.access_type,
+    }
+
+
 @router.get("/{request_id}/claim-key")
 def claim_key(
     request_id: str,

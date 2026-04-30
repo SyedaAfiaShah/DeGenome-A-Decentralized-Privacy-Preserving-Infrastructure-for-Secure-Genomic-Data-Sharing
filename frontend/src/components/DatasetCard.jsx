@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
-import { Database, Lock, ChevronRight, Pencil, Trash2 } from 'lucide-react'
+import { Database, Lock, ChevronRight, Pencil, Trash2, RefreshCw } from 'lucide-react'
 
-export default function DatasetCard({ dataset, onRequest, hasAccess, isOwner, onEdit, onDelete }) {
+export default function DatasetCard({ dataset, onRequest, hasAccess, isOwner, requestId, onEdit, onDelete, onReissueRequest }) {
   const navigate = useNavigate()
 
   return (
@@ -17,11 +17,21 @@ export default function DatasetCard({ dataset, onRequest, hasAccess, isOwner, on
             <p className="text-xs text-muted">{dataset.format_type?.toUpperCase()}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col items-end gap-1">
           {isOwner
             ? <span className="text-[10px] font-display px-1.5 py-0.5 rounded border border-teal-700/40 bg-teal-900/20 text-teal-300">your dataset</span>
             : hasAccess
-              ? <span className="badge-green badge">access granted</span>
+              ? <>
+                  <span className="badge-green badge">access granted</span>
+                  {requestId && onReissueRequest && (
+                    <button
+                      onClick={e => { e.stopPropagation(); onReissueRequest(dataset) }}
+                      className="flex items-center gap-1 text-[10px] text-muted hover:text-soft transition-colors">
+                      <RefreshCw size={9} />
+                      Request new key
+                    </button>
+                  )}
+                </>
               : <span className="badge-muted badge"><Lock size={9} /> locked</span>}
         </div>
       </div>
