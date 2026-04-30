@@ -1,54 +1,152 @@
 # DeGenome
+### A Decentralized, Privacy-Preserving Infrastructure for Secure Genomic Data Sharing
+---
 
-**A Decentralized, Privacy-Preserving Infrastructure for Secure Genomic Data Sharing and Controlled Computation**
+## TL;DR
 
-DeGenome is a full-stack platform that enables genomic data contributors to share their data safely with researchers — without raw sequences ever leaving the contributor's device. Privacy guarantees are enforced by architecture, not policy.
+Genomic data is critical for modern medicine and biology, but remains difficult to share safely due to privacy risks and institutional barriers.
+
+DeGenome is a two-sided platform that enables secure genomic data sharing without exposing raw sequences. All feature extraction and differential privacy are performed locally in the contributor’s browser before any data is transmitted.
+
+The server stores only privacy-protected feature vectors and manages access through dataset-scoped API keys controlled by contributors. Researchers query these vectors programmatically for analysis and machine learning, while raw genomic sequences never leave the contributor’s device.
+
+The system is designed so that privacy is enforced at the architectural level, not through policy or trust assumptions.
+
+**→ [Try the live prototype](https://degenome.vercel.app)**
+
+
+![DeGenome Explorer](assets/explorer.png)
+![Upload Flow](assets/upload.png)
+![Data API - features extraction](assets/dataapi.png)
 
 ---
 
 ## The Problem
 
-Genomic data holds enormous scientific value. It can identify disease risk before symptoms appear, guide drug development at the molecular level, accelerate synthetic biology, and enable precision medicine at population scale. Sequencing costs have dropped by a factor of one million since 2001 and data generation is growing faster than ever.
+Genomic data is becoming foundational to modern biology and medicine. It drives personalized medicine, accelerates drug discovery, enables synthetic biology, and powers large-scale biological research. Sequencing costs have dropped by a factor of one million since 2001 and data generation is growing faster than our ability to use it.
 
-Yet access remains severely restricted. Hospitals hold patient sequences behind regulatory walls. Biotech companies treat genomic databases as proprietary assets. Research institutions silo data behind access committees. The barrier is not technical — it is the absence of a system that makes sharing safe, fair, and worth doing for the people who hold the data.
+Yet most of this data sits locked in silos.
+
+Hospitals hold patient sequences behind regulatory walls. Biotech companies treat genomic databases as proprietary assets. Research institutions guard data behind months-long access committees. The result: researchers who need data cannot get it, and data holders who want to contribute have no safe way to do so.
+
+**The barrier is not purely technical. It is the absence of a system that makes sharing safe, fair, and worth doing.**
+
+Existing approaches fail in predictable ways:
+
+| Approach | Why It Fails |
+|---|---|
+| Centralized data repositories | Single point of failure. Raw sequences exposed if server is compromised. |
+| Access agreements and legal contracts | Slow, jurisdiction-dependent, and do not prevent misuse after access is granted. |
+| Federated databases | Still require raw data to be queryable by a central authority. |
+| Manual sharing via email or cloud storage | No access control, no audit trail, no privacy guarantee. |
+
+---
+
+## Our Solution
+
+DeGenome separates two concerns that were previously coupled: **sharing genomic insights** and **exposing raw genomic sequences**. Contributors can do the former without ever doing the latter.
+
+The core idea is that all privacy-sensitive computation happens in the contributor's browser before any data leaves their device. The server never sees raw sequences. It cannot be compelled to reveal what it does not have.
+
+**Privacy is enforced by architecture, not policy.**
 
 ---
 
 ## How It Works
-
-DeGenome separates two concerns that were previously coupled: **sharing access to genomic insights** and **exposing raw genomic sequences**. Contributors can participate in the former without ever doing the latter.
-
-[See Degenome v1 - proof of concept here](https://degenome.vercel.app/)
-
-### Privacy Pipeline
 
 ```
 Contributor's Browser
 │
 ├── 1. File selected (FASTA or VCF) — stays in browser memory
 │
-├── 2. JS Feature Extraction — pure JavaScript, zero server involvement
-│       FASTA: nucleotide counts, GC content, Shannon entropy, k-mers (k=2, k=3), sequence length
-│       VCF:   SNP/indel counts, Ts/Tv ratio, het/hom ratio, allele freq stats, per-chromosome counts
+├── 2. Feature Extraction (JavaScript, zero server involvement)
+│       FASTA: nucleotide counts, GC content, Shannon entropy,
+│              k-mer frequencies (k=2, k=3), sequence length, N ratio
+│       VCF:   SNP/indel counts, Ts/Tv ratio, het/hom ratio,
+│              allele frequency stats, per-chromosome variant counts
 │
 ├── 3. Differential Privacy — Laplace noise applied in browser
-│       Formal epsilon-DP guarantee. Default ε = 1.0
-│       Raw features never transmitted — only noised vectors leave the device
+│       Formal epsilon-DP guarantee. Configurable ε (0.1 to 5.0)
+│       Only noised feature vectors leave the device
 │
-├── 4. AES-256-GCM Encryption — raw file encrypted client-side
-│       Key never transmitted. No server-side key infrastructure exists.
-│
-└── 5. Direct Storj Upload — browser PUT to presigned URL
-        Server generates the URL but never handles file content
-        Encrypted data distributed across thousands of independent global nodes
+└── 4. Server stores only:
+        DP-noised feature vectors, dataset metadata, Storj object key reference
 
-Server receives:  differentially private feature vectors, dataset metadata, Storj object key reference
-Server never sees: raw genomic sequences, AES encryption keys, any data capable of reconstructing the sequence
+Server never sees: raw sequences, encryption keys, or any data that can reconstruct them
 ```
 
-### Research Access
+Researchers discover datasets in the Explorer, request access with a stated purpose, and receive contributor approval. On approval, a dataset-scoped API key is automatically generated and delivered to the researcher. This key authenticates their queries against the platform API and returns the privacy-protected feature vectors for that specific dataset. They can integrate directly into Python, Jupyter, or Google Colab pipelines.
 
-Researchers browse available datasets by feature schema, request access with a stated purpose, and receive approval from the contributor. Approved researchers query feature vectors via REST API or persistent API keys, integrating directly into Python ML pipelines. Credits flow automatically from researcher to contributor per query.
+---
+
+## Why Decentralized Storage
+
+Centralized cloud storage is the wrong model for genomic data. One breach, one court order, or one compromised employee is enough to expose thousands of contributors' sequences permanently. DeGenome uses **Storj** — a decentralized object storage network where files are split into encrypted fragments and distributed across thousands of independently operated nodes globally. No single node, company, or government holds a complete or meaningful piece of the data.
+
+Key properties relevant to genomic data:
+
+- **No single point of control** — no central authority can be compelled to hand over the data
+- **Erasure coding** — data remains fully recoverable even if a fraction of storage nodes go offline
+- **Pseudonymous participation (planned v2)** — in the Web3 ecosystem, contributors will interact via wallet addresses rather than institutional identities, removing the need to tie genomic contributions to a real-world name
+- **Censorship resistance (v1: feature vectors on PostgreSQL; v2: raw files on Storj)** — in the current version, DP-noised feature vectors are stored on a managed PostgreSQL instance. Full censorship resistance for raw file storage via Storj is a v2 property once raw file upload is enabled
+
+### Raw File Sharing — Planned Architecture (v2)
+
+The current platform shares only privacy-protected feature vectors. Raw file sharing is planned for v2 using an **RSA-wrapped AES key** architecture — a standard hybrid encryption pattern where the platform stores only RSA-encrypted key blobs that it cannot itself decrypt.
+
+When a contributor uploads a raw file, an AES-256 key is generated in their browser, used to encrypt the file, and then wrapped with the contributor's RSA public key before being stored on the server. The server holds an encrypted blob that is computationally useless without the contributor's RSA private key, which never leaves their device. On researcher approval, the contributor unwraps and re-encrypts the AES key under the researcher's public key. The researcher decrypts locally and downloads the raw file directly from Storj.
+
+This requires every user to hold an RSA key pair — which is why wallet-based identity is a prerequisite for v2, not just an incentive feature. A detailed technical specification will be published separately.
+
+---
+
+## Vision
+
+DeGenome is designed to grow into a decentralized genomic data commons.
+
+As contributors register datasets, the platform accumulates a queryable knowledge base of genomic feature distributions across diverse populations, organisms, and conditions. Unlike centralized genomic databases that require institutional approval processes lasting months, DeGenome enables real-time, permissioned access to privacy-protected genomic statistics.
+
+Contributors retain permanent ownership and control. Researchers get immediate, programmatic access to population-level insights. The platform mediates trust between the two without becoming a custodian of sensitive data.
+
+**The long-term vision: genomic knowledge circulates freely at the statistical level while raw sequences remain under the permanent control of those who generated them.**
+
+Planned evolution:
+
+- **Token economy** — blockchain-based contributor rewards tied to actual data usage
+- **Wallet-based identity** — users identified by wallet addresses, enabling RSA key pairs for raw file sharing and pseudonymous participation
+- **Raw file sharing** — RSA-wrapped AES key exchange; platform stores only encrypted blobs it cannot decrypt
+- **Federated learning** — researchers train models on contributor data without data leaving contributor devices
+- **ORCID integration** — verified researcher identity for institutional trust signals
+
+---
+
+## Current Features
+
+**Privacy**
+- Client-side feature extraction and Laplace differential privacy
+- Configurable epsilon budget per dataset (0.1 to 5.0)
+- Formal epsilon-DP guarantee — no reconstruction possible from released features
+- Consent confirmation required on every upload
+
+**Data Sharing**
+- Two-sided marketplace: contributor and researcher roles with separate workflows
+- Dataset Explorer with feature schema preview and format filtering
+- Access request system with contributor approval and stated purpose
+- Access history and audit trail for both roles
+- Institutional email verification with badge display on dataset cards
+
+**API Access**
+- Dataset-scoped API keys auto-generated on contributor approval
+- Keys delivered securely to researcher via one-time claim endpoint
+- Contributor can view and revoke any active key at any time
+- Dual authentication: JWT for browser sessions, API keys for programmatic access
+- Query feature vectors from Python, Jupyter, or Google Colab
+
+**Infrastructure**
+- Decentralized file storage on Storj (S3-compatible, erasure-coded, globally distributed)
+- IPFS metadata pinning via Pinata for tamper-resistant provenance records
+- PostgreSQL persistence with full data ownership lifecycle
+- Credit-based incentive system (proof of concept, moving to token economy in v2)
 
 ---
 
@@ -56,34 +154,79 @@ Researchers browse available datasets by feature schema, request access with a s
 
 | Layer | Technology |
 |---|---|
-| Backend | Python 3.11, FastAPI, SQLAlchemy, bcrypt, JWT, API Keys |
-| Frontend | React 18, Vite, Tailwind CSS, Zustand, Web Crypto API |
-| Privacy | Laplace Differential Privacy (client-side JS) |
-| Encryption | AES-256-GCM (Web Crypto API, client-side) |
-| Storage | Storj (S3-compatible, decentralized, erasure coded) |
-| Metadata | IPFS via Pinata (tamper-resistant provenance records) |
+| Backend | Python 3.11, FastAPI, SQLAlchemy, PostgreSQL |
+| Frontend | React 18, Vite, Tailwind CSS, Zustand |
+| Privacy | Client-side Laplace Differential Privacy (JavaScript) |
+| Storage | Storj decentralized object storage |
+| Metadata | IPFS via Pinata |
+| Auth | JWT, SHA-256 hashed API keys, bcrypt |
 | Deployment | Render (backend), Vercel (frontend) |
 
 ---
 
-## Features
+## Quickstart (External API)
 
-### Core Privacy Architecture
-- **Client-side feature extraction** — JavaScript pipeline runs entirely in the browser. Supports FASTA (nucleotide counts, GC content, AT content, Shannon entropy, sequence length, k=2 and k=3 k-mer frequencies, N ratio) and VCF (SNP count, indel count, Ts/Tv ratio, het/hom ratio, allele frequency statistics, per-chromosome variant counts). Dynamic schema-aware — generates a dataset-specific feature schema from actual file content.
-- **Client-side differential privacy** — Laplace noise calibrated per feature type using a sensitivity map. Type-appropriate clipping: ratio and k-mer values clipped to [0,1], count values clipped to ≥ 0. Configurable epsilon per dataset.
-- **Client-side AES-256-GCM encryption** — Web Crypto API. The AES key is generated and held in the browser. Never transmitted. The server cannot decrypt files even under compulsion.
-- **Direct Storj upload** — Presigned PUT URLs allow the browser to upload encrypted files directly to Storj. The server generates the URL and stores the object key reference but never touches file content.
-- **Decentralized storage** — Storj distributes encrypted file chunks across thousands of independent nodes globally with erasure coding. A compromised node holds only an encrypted fragment that is individually meaningless.
-- **IPFS metadata pinning** — Dataset metadata JSON is pinned to IPFS via Pinata, creating a tamper-resistant and independently verifiable provenance record for every dataset.
+```python
+import requests
 
-### Platform Features
-- **Role-based access** — Users register as contributor or researcher. Role switching is available post-signup without logging out.
-- **Contributor workflow** — Upload FASTA or VCF files, set epsilon privacy budget, approve or reject researcher access requests with time-limited permissions, earn credits per query.
-- **Researcher workflow** — Browse datasets by feature schema, send access requests with stated purpose, query approved datasets via structured JSON query API or natural language interface, spend credits per call.
-- **Structured query system** — POST /data/query accepts feature_type (SNP/kmer/nucleotide), chromosome, position range, and arbitrary filters. Returns matching feature data from the dataset's privacy-protected vector.
-- **API key authentication** — Generate named persistent API keys for programmatic access. Auth middleware accepts either JWT Bearer tokens or API keys, enabling direct integration into Python ML pipelines without browser-based authentication.
-- **Credit system** — Researchers spend 1 credit per query. Credits transfer automatically to the dataset owner. Signup bonus provided on account creation.
-- **Query logging** — All feature queries are logged with timestamp, researcher identity, and dataset reference.
+API_KEY    = "your_key_from_approval"
+DATASET_ID = "your_dataset_id"
+BASE_URL   = "https://degenome.onrender.com"
+
+response = requests.post(
+    f"{BASE_URL}/data/query",
+    headers={"Authorization": f"Bearer {API_KEY}"},
+    json={
+        "dataset_id": DATASET_ID,
+        "feature_type": "nucleotide",  # nucleotide | kmer | snp
+        "filters": {}
+    }
+)
+
+features = response.json()["feature_vector"]
+print(features)
+# Ready to use as ML input: clf.predict([list(features.values())])
+```
+
+---
+
+## API Reference
+
+### Authentication
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | /auth/register | Create account (contributor or researcher) |
+| POST | /auth/login | Login and receive JWT |
+| PATCH | /auth/role | Switch role without logging out |
+| GET | /auth/my-keys | List researcher's active API keys |
+| GET | /auth/dataset-keys | List all keys issued for contributor's datasets |
+| DELETE | /auth/api-keys/{id} | Revoke a key (contributor only) |
+
+### Datasets
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | /datasets/presign | Get presigned Storj upload URL |
+| POST | /datasets/register | Register dataset after upload |
+| GET | /datasets/ | List all available datasets |
+| GET | /datasets/my | List contributor's own datasets |
+| PATCH | /datasets/{id} | Edit dataset title and description |
+| DELETE | /datasets/{id} | Soft delete a dataset |
+
+### Data Access
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | /data/query | Query feature vector by type (nucleotide, kmer, snp) |
+| GET | /data/features | Get full feature vector for approved dataset |
+
+### Access Control
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | /access/request | Request access to a dataset (researcher) |
+| GET | /access/incoming | View incoming requests (contributor) |
+| GET | /access/outgoing | View outgoing requests (researcher) |
+| PATCH | /access/{id}/approve | Approve request and auto-generate API key |
+| PATCH | /access/{id}/reject | Reject a request |
+| GET | /access/{id}/claim-key | Claim generated key — one time only (researcher) |
 
 ---
 
@@ -92,108 +235,63 @@ Researchers browse available datasets by feature schema, request access with a s
 ```
 degenome/
 ├── backend/
-│   ├── main.py                     # FastAPI app entry point
+│   ├── main.py
 │   ├── requirements.txt
-│   ├── render.yaml                 # Render deployment config
-│   ├── .env.example                # Environment variable template
+│   ├── render.yaml
+│   ├── migrate.py                    # Schema migration script
 │   ├── models/
-│   │   ├── db.py                   # SQLAlchemy models (User, Dataset, AccessRequest, ApiKey)
-│   │   └── database.py             # DB session and engine
+│   │   ├── db.py                     # SQLAlchemy models
+│   │   └── database.py               # DB session and engine
 │   ├── routers/
-│   │   ├── auth.py                 # Register, login, role switch, API key management
-│   │   ├── datasets.py             # Presign upload URL, register dataset, list datasets
-│   │   ├── data.py                 # Feature queries, batch data, dataset info
-│   │   └── access.py               # Access request creation, approval, listing
+│   │   ├── auth.py
+│   │   ├── datasets.py
+│   │   ├── data.py
+│   │   ├── access.py
+│   │   └── credits.py
 │   └── services/
-│       ├── auth.py                 # JWT creation, password hashing, auth middleware
-│       ├── credits.py              # Credit deduction and transfer logic
-│       ├── ipfs.py                 # IPFS metadata pinning via Pinata
-│       └── storj.py                # Storj presigned URL generation via boto3
+│       ├── auth.py
+│       ├── credits.py
+│       ├── ipfs.py
+│       ├── storj.py
+│       ├── validation.py             # Feature vector plausibility checks
+│       └── institutions.py           # Institutional email verification
 │
 └── frontend/
     └── src/
         ├── pages/
-        │   ├── Upload.jsx          # 4-step upload: select → extracting → uploading → done
-        │   ├── Dashboard.jsx       # User stats, dataset list, API key management
-        │   ├── Explorer.jsx        # Browse all available datasets
-        │   ├── DataAPI.jsx         # Query builder and feature access
-        │   ├── AccessRequests.jsx  # Incoming and outgoing access requests
-        │   ├── Auth.jsx            # Login and registration
+        │   ├── Upload.jsx            # 5-step upload with storage options
+        │   ├── Dashboard.jsx         # Stats, dataset keys, credit history
+        │   ├── Explorer.jsx          # Browse and discover datasets
+        │   ├── DataAPI.jsx           # In-app query interface with charts
+        │   ├── ApiDocs.jsx           # External API reference and code snippets
+        │   ├── AccessRequests.jsx    # Incoming, outgoing, and history tabs
+        │   ├── Auth.jsx
         │   └── Landing.jsx
         ├── components/
-        │   ├── Navbar.jsx          # Navigation with role switcher
-        │   ├── QueryBuilder.jsx    # Visual query builder for researchers
-        │   ├── FeatureViewer.jsx   # Feature vector display
-        │   └── DatasetCard.jsx
+        │   ├── Navbar.jsx
+        │   ├── DatasetCard.jsx
+        │   ├── Toast.jsx
+        │   └── ToastContainer.jsx
         ├── utils/
-        │   ├── featureExtraction.js  # Client-side FASTA/VCF feature extraction (36/36 tests)
-        │   └── privacy.js            # Client-side Laplace differential privacy (40/40 tests)
+        │   ├── featureExtraction.js  # Client-side FASTA/VCF extraction — 36/36 tests passing
+        │   └── privacy.js            # Client-side Laplace DP — 40/40 tests passing
         ├── services/
-        │   └── api.js              # Axios API client
+        │   └── api.js
         └── store/
-            └── authStore.js        # Zustand auth state
+            └── authStore.js
 ```
-
----
-
-## API Reference
-
-### Authentication
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | /auth/register | Create account (role: contributor or researcher) |
-| POST | /auth/login | Login and receive JWT |
-| PATCH | /auth/role | Switch role without logging out |
-| POST | /auth/api-keys | Generate a named API key |
-| GET | /auth/api-keys | List existing API keys |
-
-### Datasets
-
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | /datasets/presign | Get presigned Storj upload URL |
-| POST | /datasets/register | Register dataset after direct Storj upload |
-| GET | /datasets/ | List all available datasets |
-| GET | /datasets/my | List current user's datasets |
-
-### Data Access
-
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | /data/features | Get feature vector for approved dataset |
-| POST | /data/query | Structured query on feature vector |
-| GET | /data/info | Dataset metadata and schema |
-| POST | /data/batch | Batch feature retrieval |
-
-### Access Control
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | /access/request | Request access to a dataset (researcher only) |
-| PATCH | /access/{id}/approve | Approve an access request (contributor only) |
-| PATCH | /access/{id}/reject | Reject an access request (contributor only) |
-| GET | /access/my | List all access requests for current user |
 
 ---
 
 ## Security Model
 
-Traditional platforms protect data with access controls and legal agreements. If the server is compromised, raw data is exposed. DeGenome removes this attack surface entirely by ensuring the server never holds data worth stealing.
+Traditional platforms protect data with access controls and legal agreements. If the server is compromised, raw data is exposed. DeGenome removes this attack surface by ensuring the server never holds data worth stealing.
 
-- The privacy guarantee is a mathematical proof, not a policy. Epsilon-differential privacy formally bounds the amount of information an adversary can extract from any released feature value, regardless of how many queries they make.
-- The encryption guarantee does not depend on the server. AES-256-GCM keys are generated in the browser and never transmitted. A complete server compromise reveals nothing about raw genomic content.
-- The storage guarantee does not depend on a single operator. Storj's erasure coding distributes encrypted chunks across thousands of independent nodes. No single node or single company can reconstruct or delete the data.
+- **Privacy guarantee** — epsilon-differential privacy formally bounds the information an adversary can extract from any released feature value, regardless of how many queries they make
+- **Storage guarantee** — Storj's erasure coding distributes encrypted chunks across thousands of independent nodes; no single node or company can reconstruct or delete the data
+- **Architectural guarantee** — the server stores only DP-noised feature vectors and object key references; it never receives, processes, or decrypts raw file content at any stage
+- **Custody guarantee (v2)** — raw file AES keys will be stored on the server only in RSA-encrypted form; the platform cannot decrypt them without the contributor's RSA private key, which never leaves their device
 
 ---
 
-## Roadmap
-
-- **On-chain token economy** — Smart contract treasury governs contributor rewards backed by real platform revenue. Token value tied to actual data usage.
-- **Blockchain wallet identity** — Contributors identified by wallet addresses instead of platform accounts, providing pseudonymous identity by default.
-- **Federated learning support** — Researchers train ML models on contributor data without data ever leaving contributor devices.
-- **Expanded format support** — FASTQ, BED, BAM, plus per-dataset consent management allowing contributors to restrict by research purpose or field.
-
-
-*DeGenome - Proof of Concept, v1.0*
----
+*DeGenome v1.0 — Proof of Concept*
