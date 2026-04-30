@@ -23,12 +23,12 @@ export default function DatasetCard({ dataset, onRequest, hasAccess, isOwner, re
             : hasAccess
               ? <>
                   <span className="badge-green badge">access granted</span>
-                  {requestId && onReissueRequest && (
+                  {onReissueRequest && (
                     <button
                       onClick={e => { e.stopPropagation(); onReissueRequest(dataset) }}
-                      className="flex items-center gap-1 text-[10px] text-muted hover:text-soft transition-colors">
+                      className="flex items-center gap-1 text-[10px] font-display px-2 py-0.5 rounded border border-edge text-muted hover:border-muted/70 hover:text-soft transition-colors">
                       <RefreshCw size={9} />
-                      Request new key
+                      Lost your key? Request again
                     </button>
                   )}
                 </>

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import {
   listDatasets, outgoingRequests, requestAccess,
-  getFeatureSchema, myDatasets, updateDataset, deleteDataset, reissueKey,
+  getFeatureSchema, myDatasets, updateDataset, deleteDataset,
 } from '../services/api'
+import { showToast } from '../components/ToastContainer'
 import useAuthStore from '../store/authStore'
 import DatasetCard from '../components/DatasetCard'
 import { Search, X, Database, AlertTriangle } from 'lucide-react'
@@ -36,10 +37,10 @@ export default function Explorer() {
   const [deleteErr,    setDeleteErr]    = useState('')
 
   // Reissue key
-  const [reissueTarget, setReissueTarget] = useState(null)
-  const [reissueResult, setReissueResult] = useState(null)
-  const [reissueBusy,   setReissueBusy]   = useState(false)
-  const [reissueErr,    setReissueErr]    = useState('')
+  const [reissueTarget,  setReissueTarget]  = useState(null)
+  const [reissuePurpose, setReissuePurpose] = useState('')
+  const [reissueBusy,    setReissueBusy]    = useState(false)
+  const [reissueErr,     setReissueErr]     = useState('')
 
   useEffect(() => {
     listDatasets().then(r => setDatasets(r.data)).catch(() => {})
@@ -125,7 +126,7 @@ export default function Explorer() {
 
   const openReissue = (dataset) => {
     setReissueTarget(dataset)
-    setReissueResult(null)
+    setReissuePurpose('I have lost my API key and need a new one issued.')
     setReissueErr('')
   }
 
@@ -133,14 +134,15 @@ export default function Explorer() {
     setReissueBusy(true)
     setReissueErr('')
     try {
-      const requestId = approvedMap.get(reissueTarget.dataset_id)
-      const { data } = await reissueKey(requestId)
-      setReissueResult(data)
+      await requestAccess(reissueTarget.dataset_id, reissuePurpose, 'feature_access')
+      setReissueTarget(null)
+      showToast('Reissuance request sent. The contributor will need to approve it.', 'success')
     } catch (e) {
       const detail = e.response?.data?.detail
-      setReissueErr(typeof detail === 'string' ? detail : 'Failed to issue new key.')
+      setReissueErr(typeof detail === 'string' ? detail : 'Failed to send reissuance request.')
     } finally {
-      setReissueBusy(false) }
+      setReissueBusy(false)
+    }
   }
 
   const filtered = datasets.filter(d => {
@@ -311,55 +313,37 @@ export default function Explorer() {
           </div>
         </div>
       )}
-      {/* ── Reissue key confirmation modal ───────────────────────────── */}
-      {reissueTarget && !reissueResult && (
+      {/* ── Request key reissuance modal ──────────────────────────────── */}
+      {reissueTarget && (
         <div className="fixed inset-0 bg-void/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={() => !reissueBusy && setReissueTarget(null)}>
           <div className="card w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
-              <h3 className="font-display text-soft text-base">Request new API key</h3>
+              <h3 className="font-display text-soft text-base">Request key reissuance</h3>
               <button onClick={() => !reissueBusy && setReissueTarget(null)} className="text-muted hover:text-soft">
                 <X size={16} />
               </button>
             </div>
             <p className="text-xs text-muted">
-              This will invalidate your existing key for{' '}
+              Your access to{' '}
               <span className="text-soft">"{reissueTarget.title}"</span>{' '}
-              and issue a new one. Your old key will stop working immediately.
+              is still approved. Submitting this will ask the contributor to issue you a new API key.
             </p>
+            <div>
+              <label className="label">Purpose</label>
+              <textarea className="input resize-none h-20"
+                value={reissuePurpose}
+                onChange={e => setReissuePurpose(e.target.value)} />
+            </div>
             {reissueErr && <p className="text-xs text-red-400">{reissueErr}</p>}
             <div className="flex gap-3">
               <button onClick={() => setReissueTarget(null)} disabled={reissueBusy}
                 className="btn-ghost flex-1 justify-center">Cancel</button>
-              <button onClick={confirmReissue} disabled={reissueBusy}
+              <button onClick={confirmReissue} disabled={reissueBusy || !reissuePurpose.trim()}
                 className="btn-primary flex-1 justify-center disabled:opacity-40">
-                {reissueBusy ? 'Issuing…' : 'Issue new key'}
+                {reissueBusy ? 'Submitting…' : 'Request reissuance'}
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── New key display modal ──────────────────────────────────────── */}
-      {reissueResult && (
-        <div className="fixed inset-0 bg-void/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="card w-full max-w-md space-y-4">
-            <h3 className="font-display text-soft text-base">New API Key Issued</h3>
-            <p className="text-xs text-amber-400 font-display">
-              Copy this key now. It will not be shown again.
-            </p>
-            <div className="relative">
-              <pre className="text-xs font-mono bg-edge rounded p-3 break-all whitespace-pre-wrap text-cyan pr-14">
-                {reissueResult.key}
-              </pre>
-              <button
-                onClick={() => navigator.clipboard.writeText(reissueResult.key)}
-                className="absolute top-2 right-2 text-[10px] font-display px-2 py-1 rounded border border-edge text-muted hover:text-soft hover:border-cyan/40 transition-colors">
-                Copy
-              </button>
-            </div>
-            <button onClick={() => { setReissueResult(null); setReissueTarget(null) }}
-              className="btn-primary w-full justify-center">Done</button>
           </div>
         </div>
       )}

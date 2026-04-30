@@ -39,19 +39,27 @@ def request_access(
     if body.access_type == "raw_file_access" and not dataset.has_raw_file:
         raise HTTPException(400, "This dataset has no raw file available")
 
-    existing = db.query(AccessRequest).filter(
+    pending = db.query(AccessRequest).filter(
         AccessRequest.requester_id == user.id,
         AccessRequest.dataset_id   == body.dataset_id,
         AccessRequest.access_type  == body.access_type,
         AccessRequest.status       == "pending",
     ).first()
-    if existing:
-        raise HTTPException(409, "Access request already pending")
+    if pending:
+        raise HTTPException(409, "You already have a pending request for this dataset.")
+
+    approved_req = db.query(AccessRequest).filter(
+        AccessRequest.requester_id == user.id,
+        AccessRequest.dataset_id   == body.dataset_id,
+        AccessRequest.access_type  == body.access_type,
+        AccessRequest.status       == "approved",
+    ).first()
+    purpose = ("[Key Reissuance] " + body.purpose) if approved_req else body.purpose
 
     req = AccessRequest(
         requester_id=user.id,
         dataset_id=body.dataset_id,
-        purpose=body.purpose,
+        purpose=purpose,
         access_type=body.access_type,
     )
     db.add(req)

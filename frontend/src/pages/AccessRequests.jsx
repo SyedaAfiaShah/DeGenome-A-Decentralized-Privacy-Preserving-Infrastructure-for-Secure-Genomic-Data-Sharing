@@ -177,6 +177,9 @@ export default function AccessRequests() {
                     <p className="text-sm font-display text-soft">{req.dataset_title}</p>
                     {statusBadge(req.status)}
                     {req.access_type && accessTypeBadge(req.access_type)}
+                    {tab === 'incoming' && req.purpose?.startsWith('[Key Reissuance]') && (
+                      <span className="text-[10px] font-display px-1.5 py-0.5 rounded border border-yellow-700/40 bg-yellow-900/20 text-yellow-300">Reissuance</span>
+                    )}
                   </div>
                   <p className="text-xs text-muted mb-2">
                     {(tab === 'incoming' || (tab === 'history' && isContributor()))
@@ -184,7 +187,16 @@ export default function AccessRequests() {
                       : `Dataset ID: ${req.dataset_id?.slice(0, 8)}…`}
                   </p>
                   {req.purpose && (
-                    <p className="text-xs text-muted italic">"{req.purpose}"</p>
+                    <p className="text-xs text-muted italic">
+                      "{tab === 'incoming' && req.purpose.startsWith('[Key Reissuance]')
+                        ? req.purpose.slice('[Key Reissuance] '.length)
+                        : req.purpose}"
+                    </p>
+                  )}
+                  {tab === 'incoming' && req.purpose?.startsWith('[Key Reissuance]') && (
+                    <p className="text-[10px] text-yellow-400/70 mt-1">
+                      This researcher previously had approved access. They are requesting a new key.
+                    </p>
                   )}
                   {req.expires_at && (
                     <p className="text-[10px] text-muted mt-1 font-mono">
