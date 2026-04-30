@@ -29,7 +29,7 @@ Yet most of this data sits locked in silos.
 
 Hospitals hold patient sequences behind regulatory walls. Biotech companies treat genomic databases as proprietary assets. Research institutions guard data behind months-long access committees. The result: researchers who need data cannot get it, and data holders who want to contribute have no safe way to do so.
 
-**The barrier is not purely technical. It is the absence of a system that makes sharing safe, fair, and worth doing.**
+**The barrier is not technical. It is the absence of a system that makes sharing safe, fair, and worth doing.**
 
 Existing approaches fail in predictable ways:
 
@@ -42,7 +42,7 @@ Existing approaches fail in predictable ways:
 
 ---
 
-## Our Solution
+## Solution
 
 DeGenome separates two concerns that were previously coupled: **sharing genomic insights** and **exposing raw genomic sequences**. Contributors can do the former without ever doing the latter.
 
@@ -57,7 +57,7 @@ The core idea is that all privacy-sensitive computation happens in the contribut
 ```
 Contributor's Browser
 │
-├── 1. File selected (FASTA or VCF) — stays in browser memory
+├── 1. File selected (FASTA or VCF): stays in browser memory
 │
 ├── 2. Feature Extraction (JavaScript, zero server involvement)
 │       FASTA: nucleotide counts, GC content, Shannon entropy,
@@ -65,7 +65,7 @@ Contributor's Browser
 │       VCF:   SNP/indel counts, Ts/Tv ratio, het/hom ratio,
 │              allele frequency stats, per-chromosome variant counts
 │
-├── 3. Differential Privacy — Laplace noise applied in browser
+├── 3. Differential Privacy: Laplace noise applied in browser
 │       Formal epsilon-DP guarantee. Configurable ε (0.1 to 5.0)
 │       Only noised feature vectors leave the device
 │
@@ -81,22 +81,22 @@ Researchers discover datasets in the Explorer, request access with a stated purp
 
 ## Why Decentralized Storage
 
-Centralized cloud storage is the wrong model for genomic data. One breach, one court order, or one compromised employee is enough to expose thousands of contributors' sequences permanently. DeGenome uses **Storj** — a decentralized object storage network where files are split into encrypted fragments and distributed across thousands of independently operated nodes globally. No single node, company, or government holds a complete or meaningful piece of the data.
+Centralized cloud storage is the wrong model for genomic data. One breach, one court order, or one compromised employee is enough to expose thousands of contributors' sequences permanently. DeGenome uses **Storj**: a decentralized object storage network where files are split into encrypted fragments and distributed across thousands of independently operated nodes globally. No single node, company, or government holds a complete or meaningful piece of the data.
 
 Key properties relevant to genomic data:
 
-- **No single point of control** — no central authority can be compelled to hand over the data
-- **Erasure coding** — data remains fully recoverable even if a fraction of storage nodes go offline
-- **Pseudonymous participation (planned v2)** — in the Web3 ecosystem, contributors will interact via wallet addresses rather than institutional identities, removing the need to tie genomic contributions to a real-world name
-- **Censorship resistance (v1: feature vectors on PostgreSQL; v2: raw files on Storj)** — in the current version, DP-noised feature vectors are stored on a managed PostgreSQL instance. Full censorship resistance for raw file storage via Storj is a v2 property once raw file upload is enabled
+- **No single point of control**: no central authority can be compelled to hand over the data
+- **Erasure coding**: data remains fully recoverable even if a fraction of storage nodes go offline
+- **Pseudonymous participation (planned v2)**: in the Web3 ecosystem, contributors will interact via wallet addresses rather than institutional identities, removing the need to tie genomic contributions to a real-world name
+- **Censorship resistance (v1: feature vectors on PostgreSQL; v2: raw files on Storj)**: in the current version, DP-noised feature vectors are stored on a managed PostgreSQL instance. Full censorship resistance for raw file storage via Storj is a v2 property once raw file upload is enabled
 
-### Raw File Sharing — Planned Architecture (v2)
+### Raw File Sharing: Planned Architecture (v2)
 
-The current platform shares only privacy-protected feature vectors. Raw file sharing is planned for v2 using an **RSA-wrapped AES key** architecture — a standard hybrid encryption pattern where the platform stores only RSA-encrypted key blobs that it cannot itself decrypt.
+The current platform shares only privacy-protected feature vectors. Raw file sharing is planned for v2 using an **RSA-wrapped AES key** architecture: a standard hybrid encryption pattern where the platform stores only RSA-encrypted key blobs that it cannot itself decrypt.
 
 When a contributor uploads a raw file, an AES-256 key is generated in their browser, used to encrypt the file, and then wrapped with the contributor's RSA public key before being stored on the server. The server holds an encrypted blob that is computationally useless without the contributor's RSA private key, which never leaves their device. On researcher approval, the contributor unwraps and re-encrypts the AES key under the researcher's public key. The researcher decrypts locally and downloads the raw file directly from Storj.
 
-This requires every user to hold an RSA key pair — which is why wallet-based identity is a prerequisite for v2, not just an incentive feature. A detailed technical specification will be published separately.
+This requires every user to hold an RSA key pair: which is why wallet-based identity is a prerequisite for v2, not just an incentive feature. A detailed technical specification will be published separately.
 
 ---
 
@@ -112,11 +112,11 @@ Contributors retain permanent ownership and control. Researchers get immediate, 
 
 Planned evolution:
 
-- **Token economy** — blockchain-based contributor rewards tied to actual data usage
-- **Wallet-based identity** — users identified by wallet addresses, enabling RSA key pairs for raw file sharing and pseudonymous participation
-- **Raw file sharing** — RSA-wrapped AES key exchange; platform stores only encrypted blobs it cannot decrypt
-- **Federated learning** — researchers train models on contributor data without data leaving contributor devices
-- **ORCID integration** — verified researcher identity for institutional trust signals
+- **Token economy**: blockchain-based contributor rewards tied to actual data usage
+- **Wallet-based identity**: users identified by wallet addresses, enabling RSA key pairs for raw file sharing and pseudonymous participation
+- **Raw file sharing**: RSA-wrapped AES key exchange; platform stores only encrypted blobs it cannot decrypt
+- **Federated learning**: researchers train models on contributor data without data leaving contributor devices
+- **ORCID integration**: verified researcher identity for institutional trust signals
 
 ---
 
@@ -125,7 +125,7 @@ Planned evolution:
 **Privacy**
 - Client-side feature extraction and Laplace differential privacy
 - Configurable epsilon budget per dataset (0.1 to 5.0)
-- Formal epsilon-DP guarantee — no reconstruction possible from released features
+- Formal epsilon-DP guarantee: no reconstruction possible from released features
 - Consent confirmation required on every upload
 
 **Data Sharing**
@@ -226,7 +226,7 @@ print(features)
 | GET | /access/outgoing | View outgoing requests (researcher) |
 | PATCH | /access/{id}/approve | Approve request and auto-generate API key |
 | PATCH | /access/{id}/reject | Reject a request |
-| GET | /access/{id}/claim-key | Claim generated key — one time only (researcher) |
+| GET | /access/{id}/claim-key | Claim generated key: one time only (researcher) |
 
 ---
 
@@ -273,8 +273,8 @@ degenome/
         │   ├── Toast.jsx
         │   └── ToastContainer.jsx
         ├── utils/
-        │   ├── featureExtraction.js  # Client-side FASTA/VCF extraction — 36/36 tests passing
-        │   └── privacy.js            # Client-side Laplace DP — 40/40 tests passing
+        │   ├── featureExtraction.js  # Client-side FASTA/VCF extraction: 36/36 tests passing
+        │   └── privacy.js            # Client-side Laplace DP: 40/40 tests passing
         ├── services/
         │   └── api.js
         └── store/
@@ -287,11 +287,11 @@ degenome/
 
 Traditional platforms protect data with access controls and legal agreements. If the server is compromised, raw data is exposed. DeGenome removes this attack surface by ensuring the server never holds data worth stealing.
 
-- **Privacy guarantee** — epsilon-differential privacy formally bounds the information an adversary can extract from any released feature value, regardless of how many queries they make
-- **Storage guarantee** — Storj's erasure coding distributes encrypted chunks across thousands of independent nodes; no single node or company can reconstruct or delete the data
-- **Architectural guarantee** — the server stores only DP-noised feature vectors and object key references; it never receives, processes, or decrypts raw file content at any stage
-- **Custody guarantee (v2)** — raw file AES keys will be stored on the server only in RSA-encrypted form; the platform cannot decrypt them without the contributor's RSA private key, which never leaves their device
+- **Privacy guarantee**: epsilon-differential privacy formally bounds the information an adversary can extract from any released feature value, regardless of how many queries they make
+- **Storage guarantee**: Storj's erasure coding distributes encrypted chunks across thousands of independent nodes; no single node or company can reconstruct or delete the data
+- **Architectural guarantee**: the server stores only DP-noised feature vectors and object key references; it never receives, processes, or decrypts raw file content at any stage
+- **Custody guarantee (v2)**: raw file AES keys will be stored on the server only in RSA-encrypted form; the platform cannot decrypt them without the contributor's RSA private key, which never leaves their device
 
 ---
 
-*DeGenome v1.0 — Proof of Concept*
+*DeGenome v1.0: Proof of Concept*
