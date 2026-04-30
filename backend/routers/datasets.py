@@ -190,14 +190,15 @@ def update_dataset(
 
 def _dataset_summary(d: Dataset) -> dict:
     return {
-        "dataset_id":      d.id,
-        "title":           d.title,
-        "description":     d.description,
-        "format_type":     d.format_type,
-        "active_features": d.active_features,
-        "feature_count":   len(d.active_features or []),
-        "regions":         d.regions,
-        "sample_count":    d.sample_count,
-        "metadata_cid":    d.metadata_cid,
-        "created_at":      d.created_at.isoformat(),
+        "dataset_id":            d.id,
+        "title":                 d.title,
+        "description":           d.description,
+        "format_type":           d.format_type,
+        "active_features":       d.active_features,
+        "feature_count":         len(d.active_features or []),
+        "regions":               d.regions,
+        "sample_count":          d.sample_count,
+        "metadata_cid":          d.metadata_cid,
+        "created_at":            d.created_at.isoformat(),
+        "owner_is_institutional": d.owner.is_institutional if d.owner else False,
     }

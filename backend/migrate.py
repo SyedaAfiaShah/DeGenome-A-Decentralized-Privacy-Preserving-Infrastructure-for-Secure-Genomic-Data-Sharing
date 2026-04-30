@@ -24,6 +24,9 @@ migrations = [
     # api_keys table
     "ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS dataset_id VARCHAR",
     "ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS access_type VARCHAR",
+
+    # users table
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_institutional BOOLEAN DEFAULT FALSE",
 ]
 
 with engine.connect() as conn:

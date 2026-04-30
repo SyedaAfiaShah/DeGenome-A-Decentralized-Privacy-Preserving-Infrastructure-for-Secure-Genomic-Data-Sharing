@@ -5,6 +5,7 @@ from models.database import get_db
 from models.db import User, ApiKey, Dataset
 from services.auth import hash_password, verify_password, create_token, get_current_user
 from services.credits import award_signup_bonus
+from services.institutions import is_institutional_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -41,13 +42,19 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
         hashed_pw=hash_password(body.password),
         role=body.role,
     )
+    user.is_institutional = is_institutional_email(body.email)
     db.add(user)
     db.commit()
     db.refresh(user)
     award_signup_bonus(user, db)
 
-    return {"message": "Account created", "user_id": user.id, "role": user.role,
-            "token": create_token(user.id, user.role)}
+    return {
+        "message":          "Account created",
+        "user_id":          user.id,
+        "role":             user.role,
+        "is_institutional": user.is_institutional,
+        "token":            create_token(user.id, user.role),
+    }
 
 
 @router.post("/login")
@@ -55,9 +62,17 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == body.email).first()
     if not user or not verify_password(body.password, user.hashed_pw):
         raise HTTPException(401, "Invalid credentials")
-    return {"token": create_token(user.id, user.role),
-            "user": {"id": user.id, "username": user.username, "role": user.role,
-                     "credits": user.credits, "earnings": user.earnings}}
+    return {
+        "token": create_token(user.id, user.role),
+        "user":  {
+            "id":               user.id,
+            "username":         user.username,
+            "role":             user.role,
+            "credits":          user.credits,
+            "earnings":         user.earnings,
+            "is_institutional": user.is_institutional,
+        },
+    }
 
 
 @router.patch("/role")
@@ -76,11 +91,12 @@ def switch_role(
     return {
         "token": create_token(current_user.id, current_user.role),
         "user":  {
-            "id":       current_user.id,
-            "username": current_user.username,
-            "role":     current_user.role,
-            "credits":  current_user.credits,
-            "earnings": current_user.earnings,
+            "id":               current_user.id,
+            "username":         current_user.username,
+            "role":             current_user.role,
+            "credits":          current_user.credits,
+            "earnings":         current_user.earnings,
+            "is_institutional": current_user.is_institutional,
         },
     }
 

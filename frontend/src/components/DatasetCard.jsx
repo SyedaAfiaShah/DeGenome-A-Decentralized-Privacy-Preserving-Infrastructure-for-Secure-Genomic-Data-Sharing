@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { Database, Lock, ChevronRight, Pencil, Trash2, RefreshCw } from 'lucide-react'
+import { Database, Lock, ChevronRight, Pencil, Trash2, RefreshCw, GraduationCap } from 'lucide-react'
 
 export default function DatasetCard({ dataset, onRequest, hasAccess, isOwner, requestId, onEdit, onDelete, onReissueRequest }) {
   const navigate = useNavigate()
@@ -14,7 +14,17 @@ export default function DatasetCard({ dataset, onRequest, hasAccess, isOwner, re
           </div>
           <div>
             <p className="text-sm font-display text-soft">{dataset.title}</p>
-            <p className="text-xs text-muted">{dataset.format_type?.toUpperCase()}</p>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <p className="text-xs text-muted">{dataset.format_type?.toUpperCase()}</p>
+              {dataset.owner_is_institutional && (
+                <span
+                  title="Uploaded by a verified institutional researcher"
+                  className="flex items-center gap-0.5 text-[10px] font-display px-1.5 py-0.5 rounded border border-blue-700/40 bg-blue-900/20 text-blue-300">
+                  <GraduationCap size={9} />
+                  Institutional
+                </span>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex flex-col items-end gap-1">

@@ -5,7 +5,7 @@ import {
   getMyKeys, revokeKey, getDatasetKeys,
 } from '../services/api'
 import useAuthStore from '../store/authStore'
-import { Upload, Database, Activity, TrendingUp, Clock, Key, ExternalLink, Trash2 } from 'lucide-react'
+import { Upload, Database, Activity, TrendingUp, Clock, Key, ExternalLink, Trash2, GraduationCap } from 'lucide-react'
 
 const accessTypeBadge = t => t === 'raw_file_access'
   ? <span className="text-[10px] font-display px-1.5 py-0.5 rounded border border-purple-700/40 bg-purple-900/20 text-purple-300">Raw File</span>
@@ -60,7 +60,15 @@ export default function Dashboard() {
     <div className="page">
       <div className="mb-8">
         <h1 className="font-display text-2xl text-soft mb-1">Dashboard</h1>
-        <p className="text-xs text-muted">Welcome back, <span className="text-soft">{user?.username}</span></p>
+        <div className="flex items-center gap-2">
+          <p className="text-xs text-muted">Welcome back, <span className="text-soft">{user?.username}</span></p>
+          {user?.is_institutional && (
+            <span className="flex items-center gap-1 text-[10px] font-display px-1.5 py-0.5 rounded border border-blue-700/40 bg-blue-900/20 text-blue-300">
+              <GraduationCap size={9} />
+              Institutional account
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Stat cards */}

@@ -14,8 +14,9 @@ class User(Base):
     email        = Column(String, unique=True, nullable=False, index=True)
     username     = Column(String, unique=True, nullable=False)
     hashed_pw    = Column(String, nullable=False)
-    role         = Column(String, nullable=False)  # contributor | researcher
-    credits      = Column(Float, default=10.0)
+    role             = Column(String, nullable=False)  # contributor | researcher
+    is_institutional = Column(Boolean, default=False)
+    credits          = Column(Float, default=10.0)
     earnings     = Column(Float, default=0.0)
     created_at   = Column(DateTime, default=datetime.utcnow)
 
